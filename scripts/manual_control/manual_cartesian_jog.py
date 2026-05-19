@@ -18,15 +18,24 @@
 import time
 import msvcrt
 
-from robot import Robot
-from robot_config import (
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = next(
+    (parent for parent in Path(__file__).resolve().parents if (parent / "run_pickplace_fast.py").exists()),
+    Path(__file__).resolve().parents[1],
+)
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from hardware.robot import Robot
+from config.robot_config import (
     DEFAULT_TRAVEL_Z_MM,
     HOME_Z_MM,
     LOW_Z_MM,
     ROBOT_CONFIG,
     print_startup_config,
 )
-from camera_config import OVERHEAD_INDEX, STEREO_INDEX
+from config.camera_config import OVERHEAD_INDEX, STEREO_INDEX
 
 
 # ============================================================

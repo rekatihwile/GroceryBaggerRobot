@@ -105,6 +105,6 @@ def apply_stereo_camera_settings(
 
 
 def open_overhead_camera():
-    from overhead_camera import SimpleOverheadCamera
+    from hardware.cameras.overhead_camera import SimpleOverheadCamera
 
     return SimpleOverheadCamera().cap

@@ -53,15 +53,15 @@ except ImportError:
 import cv2
 import numpy as np
 
-from robot import Robot
-from robot_config import (
+from hardware.robot import Robot
+from config.robot_config import (
     ROBOT_CONFIG,
     DEFAULT_TRAVEL_Z_MM,
     HOME_Z_MM,
     print_startup_config,
     require_soft_limits_configured,
 )
-from camera_config import (
+from config.camera_config import (
     EE_TAG_ID,
     TARGET_TAG_ID,
     OVERHEAD_INDEX,
@@ -71,7 +71,7 @@ from camera_config import (
     OVERHEAD_FOURCC,
     STEREO_INDEX,
 )
-from stereo_apriltag_viewer import (
+from hardware.cameras.stereo_apriltag_viewer import (
     SimpleStereoCamera,
     build_detector,
     detect_tags,

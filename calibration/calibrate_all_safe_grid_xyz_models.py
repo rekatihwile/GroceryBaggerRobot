@@ -49,8 +49,17 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from robot import Robot
-from robot_config import (
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = next(
+    (parent for parent in Path(__file__).resolve().parents if (parent / "run_pickplace_fast.py").exists()),
+    Path(__file__).resolve().parents[1],
+)
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from hardware.robot import Robot
+from config.robot_config import (
     DEFAULT_TRAVEL_Z_MM,
     HOME_Z_MM,
     LOW_Z_MM,
@@ -59,7 +68,7 @@ from robot_config import (
     print_startup_config,
     require_soft_limits_configured,
 )
-from camera_config import (
+from config.camera_config import (
     EE_TAG_ID,
     OVERHEAD_FOURCC,
     OVERHEAD_FPS,
@@ -74,8 +83,8 @@ from camera_config import (
     STEREO_INDEX,
     STEREO_WIDTH,
 )
-from overhead_camera import SimpleOverheadCamera
-from stereo_apriltag_viewer import (
+from hardware.cameras.overhead_camera import SimpleOverheadCamera
+from hardware.cameras.stereo_apriltag_viewer import (
     SimpleStereoCamera,
     build_detector,
     detect_tags,

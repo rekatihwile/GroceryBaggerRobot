@@ -38,7 +38,16 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from camera_config import (
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = next(
+    (parent for parent in Path(__file__).resolve().parents if (parent / "run_pickplace_fast.py").exists()),
+    Path(__file__).resolve().parents[1],
+)
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from config.camera_config import (
     OVERHEAD_FOURCC as FOURCC,
     OVERHEAD_FPS as FPS,
     OVERHEAD_HEIGHT as FRAME_HEIGHT,
@@ -46,7 +55,7 @@ from camera_config import (
     OVERHEAD_INTRINSICS_PATH as OUT_PATH,
     OVERHEAD_WIDTH as FRAME_WIDTH,
 )
-from overhead_camera import SimpleOverheadCamera
+from hardware.cameras.overhead_camera import SimpleOverheadCamera
 
 
 # ============================================================

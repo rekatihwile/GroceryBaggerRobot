@@ -12,11 +12,11 @@ It does not import or command the robot.
 import cv2
 import numpy as np
 
-from camera_config import (
+from config.camera_config import (
     OVERHEAD_INDEX,
     apply_overhead_camera_settings,
 )
-from stereo_apriltag_viewer import build_detector, detect_tags, draw_detection
+from hardware.cameras.stereo_apriltag_viewer import build_detector, detect_tags, draw_detection
 
 
 class SimpleOverheadCamera:

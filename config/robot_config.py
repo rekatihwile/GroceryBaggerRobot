@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from robot import JointPose, RobotConfig
+from hardware.robot import JointPose, RobotConfig
 
 
 HOME_Z_MM = 100.0
@@ -13,14 +13,14 @@ STEPS_PER_MM_J3 = 50.92958
 L1_MM = 450.0
 L2_MM = 450.0
 
-SOFT_LIMITS_CONFIG_PATH = Path("soft_limits_config.json")
+SOFT_LIMITS_CONFIG_PATH = Path("config/soft_limits_config.json")
 
 HOME_POSE = JointPose(
 
 )
 
 ROBOT_CONFIG = RobotConfig(
-    
+    soft_limits_path=str(SOFT_LIMITS_CONFIG_PATH),
 )
 
 

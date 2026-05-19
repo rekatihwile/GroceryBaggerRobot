@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from camera_config import (
+from config.camera_config import (
     EE_TAG_ID as TAG_ID,
     STEREO_FOURCC as FOURCC,
     STEREO_FPS as FPS,

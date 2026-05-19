@@ -17,7 +17,7 @@ except ImportError:
     serial = None
 
 try:
-    from soft_limits import SoftLimitConfig, default_config, plan_safe_path
+    from config.soft_limits import SoftLimitConfig, default_config, plan_safe_path
 except ImportError:
     SoftLimitConfig = None
     default_config = None
@@ -111,9 +111,9 @@ class RobotConfig:
 
     # Optional software keep-out zones. Disabled by default so old scripts behave the same.
     # To enable in a script:
-    #   cfg = RobotConfig(..., soft_limits_enabled=True, soft_limits_path="soft_limits_config.json")
+    #   cfg = RobotConfig(..., soft_limits_enabled=True, soft_limits_path="config/soft_limits_config.json")
     soft_limits_enabled: bool = True
-    soft_limits_path: str | None = "soft_limits_config.json"
+    soft_limits_path: str | None = "config/soft_limits_config.json"
     soft_limits_verbose: bool = True
     soft_limits_strict: bool = True
 
@@ -540,7 +540,7 @@ class Robot:
             float(y0 if y_mm is None else y_mm),
             float(z0 if z_mm is None else z_mm),
         )
-        from soft_limits import is_pose_safe
+        from config.soft_limits import is_pose_safe
         return is_pose_safe(p, self.soft_cfg)
 
     def max_safe_z_at_xy(self, x_mm: float, y_mm: float) -> float | None:
@@ -580,7 +580,7 @@ class Robot:
             # A coarse but safe-ish sample density. Step counts are large, so cap it.
             samples = int(max(25, min(250, max_delta // 75 + 2)))
 
-        from soft_limits import is_pose_safe
+        from config.soft_limits import is_pose_safe
         for i in range(samples + 1):
             t = i / samples
             js = tuple(round(a + (e - a) * t) for a, e in zip(start_steps, end_steps))
