@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Environment/secrets
+.env
+*.env
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+
+# Large/generated files
+*.mp4
+*.avi
+*.mov
+*.zip
+*.tar
+*.tar.gz
+*.pth
+*.pt
+*.onnx
+*.engine
+
+# Logs/output
+logs/
+runs/
+outputs/
+trial_recordings/

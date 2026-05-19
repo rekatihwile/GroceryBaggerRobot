@@ -1,0 +1,27 @@
+{
+  "sample_step_mm": 5.0,
+  "default_detour_margin_mm": 35.0,
+  "max_waypoints": 8,
+  "boxes": [
+    {
+      "name": "overhead_frame_bar",
+      "xmin": -800.0,
+      "xmax": 210.0,
+      "ymin": 270.0,
+      "ymax": 730.0,
+      "z_min": 125.0,
+      "margin_xy": 5.0,
+      "margin_z": 5.0
+    },
+    {
+      "name": "box_2",
+      "xmin": 51.0,
+      "xmax": 210.375,
+      "ymin": 554.625,
+      "ymax": 648.125,
+      "z_min": 65.0,
+      "margin_xy": 25.0,
+      "margin_z": 5.0
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+ROBOT CALIBRATION BUNDLE REPORT
+========================================================================
+Generated: Mon May 18 15:24:21 2026
+Scan mode: global_coarse
+Floor-plane height convention:
+  DISTANCE_FROM_ORIGIN_TO_FLOOR_PLANE_MM=575.0
+  L1_TO_L2_HEIGHT_DIFFERENCE_MM=55.0
+  J3_ZERO_TO_EE_DROP_MM=400.0
+  EE_floor_height = 120.0 + robot_z
+Rows scanned: 49
+Moves OK: 45
+Overhead visible: 41
+Stereo visible: 43
+Reference poses visible: 1
+
+Runtime confidence metadata:
+  MAX_RUNTIME_NEAREST_SAMPLE_DIST_MM=90.0
+  MAX_RUNTIME_HOMOGRAPHY_RMS_MM=25.0
+
+HEIGHT-INDEXED OVERHEAD HOMOGRAPHY
+========================================================================
+z=0.0 mm: RMS=8.77 mm MAX=22.80 mm n=11
+  z0_x90_y250        ex=  -7.48 ey=  -0.29 |e|=  7.48
+  z0_x190_y250       ex=  -3.82 ey=  +0.41 |e|=  3.85
+  z0_x290_y250       ex=  +3.50 ey=  +1.63 |e|=  3.85
+  z0_x390_y250       ex=  +0.61 ey=  +3.84 |e|=  3.89
+  z0_x90_y350        ex= +21.55 ey=  -7.43 |e|= 22.80
+  z0_x190_y350       ex= -10.28 ey=  +1.69 |e|= 10.42
+  z0_x290_y350       ex=  +0.22 ey=  -1.03 |e|=  1.06
+  z0_x390_y350       ex=  +0.76 ey=  -2.74 |e|=  2.85
+  z0_x190_y450       ex=  -4.38 ey=  +7.51 |e|=  8.69
+  z0_x290_y450       ex=  -2.17 ey=  +1.22 |e|=  2.49
+  z0_x390_y450       ex=  +1.50 ey=  -4.80 |e|=  5.03
+z=50.0 mm: RMS=9.77 mm MAX=15.74 mm n=11
+  z50_x90_y250       ex=  +5.78 ey= +12.36 |e|= 13.65
+  z50_x190_y250      ex= -11.36 ey= -10.89 |e|= 15.74
+  z50_x290_y250      ex=  +5.78 ey=  -1.51 |e|=  5.98
+  z50_x390_y250      ex=  +1.23 ey=  +7.57 |e|=  7.67
+  z50_x90_y350       ex=  +7.87 ey= -11.17 |e|= 13.67
+  z50_x190_y350      ex= -12.67 ey=  +0.87 |e|= 12.69
+  z50_x290_y350      ex=  +3.70 ey=  +0.57 |e|=  3.75
+  z50_x390_y350      ex=  -0.66 ey=  +0.74 |e|=  0.99
+  z50_x190_y450      ex=  -0.35 ey=  +9.18 |e|=  9.18
+  z50_x290_y450      ex=  +2.76 ey=  +0.20 |e|=  2.76
+  z50_x390_y450      ex=  -2.10 ey=  -7.90 |e|=  8.18
+z=100.0 mm: RMS=9.77 mm MAX=15.72 mm n=11
+  z100_x90_y250      ex=  +5.65 ey= +12.35 |e|= 13.58
+  z100_x190_y250     ex= -11.39 ey= -10.83 |e|= 15.72
+  z100_x290_y250     ex=  +5.79 ey=  -1.37 |e|=  5.95
+  z100_x390_y250     ex=  +1.32 ey=  +7.55 |e|=  7.66
+  z100_x90_y350      ex=  +8.01 ey= -11.17 |e|= 13.75
+  z100_x190_y350     ex= -12.62 ey=  +0.64 |e|= 12.64
+  z100_x290_y350     ex=  +3.65 ey=  +0.48 |e|=  3.68
+  z100_x390_y350     ex=  -0.64 ey=  +0.72 |e|=  0.96
+  z100_x190_y450     ex=  -0.31 ey=  +9.32 |e|=  9.33
+  z100_x290_y450     ex=  +2.70 ey=  +0.25 |e|=  2.71
+  z100_x390_y450     ex=  -2.16 ey=  -7.93 |e|=  8.22
+z=150.0 mm: RMS=8.86 mm MAX=18.10 mm n=7
+  WARNING: n=7 is valid but sparse; recommended >= 8
+  z150_x190_y250     ex=  -5.04 ey=  +4.76 |e|=  6.93
+  z150_x290_y250     ex=  -3.67 ey=  +2.55 |e|=  4.47
+  z150_x390_y250     ex=  +2.03 ey=  +1.06 |e|=  2.29
+  z150_x290_y350     ex= +13.18 ey= -12.40 |e|= 18.10
+  z150_x390_y350     ex=  -2.42 ey=  -1.77 |e|=  3.00
+  z150_x290_y450     ex=  +3.48 ey=  -2.26 |e|=  4.15
+  z150_x390_y450     ex=  -7.57 ey=  +8.06 |e|= 11.06
+
+GLOBAL STEREO FITS
+========================================================================
+legacy cam_xyz_from_robot_xy RMSE = 51.16 mm, n=43
+legacy robot_xy_from_cam_xyz RMSE = 13.42 mm, n=43
+FULL cam_xyz_from_robot_xyz RMSE = 12.08 mm, n=43
+FULL robot_xyz_from_cam_xyz RMSE = 13.52 mm, n=43
+
+Conventions:
+  cam_xyz = stereo triangulated EE tag center, in stereo camera coordinates
+  robot_xyz = FK estimate of EE/tool pose, in robot coordinates
+  Runtime delta: delta_cam = object_cam - ee_cam
+  Runtime correction: delta_robot = A_robot_from_cam_xyz_3x4[:, :3] @ delta_cam
+
+B_cam_from_robot_xyz_3x4 maps [robot_x, robot_y, robot_z, 1] -> cam_xyz:
+[[-8.74315309e-01  5.29094958e-02 -3.80236780e-02  1.52625887e+02]
+ [ 5.19027631e-03  8.66874408e-01 -3.59893704e-01 -3.22987176e+02]
+ [-3.00897688e-02  3.41900929e-01  9.12953434e-01 -5.81548476e+02]]
+A_robot_from_cam_xyz_3x4 maps [cam_x, cam_y, cam_z, 1] -> robot_xyz:
+[[-1.12957241e+00  7.41663630e-02 -1.45944101e-02  1.90657502e+02]
+ [-7.01803001e-03  9.92432792e-01  3.90235436e-01  5.50983254e+02]
+ [-3.52937705e-02 -3.70913326e-01  9.46542532e-01  4.35927354e+02]]
+Robot axes expressed in stereo-camera coordinates, columns from B:
+  robot +X in cam = [-0.87431531  0.00519028 -0.03008977]
+  robot +Y in cam = [0.0529095  0.86687441 0.34190093]
+  robot +Z in cam = [-0.03802368 -0.3598937   0.91295343]
+  unit axes rows [X,Y,Z] =
+[[-0.99939073  0.00593277 -0.03439427]
+ [ 0.05668693  0.92876427  0.36631069]
+ [-0.03871805 -0.36646598  0.92962552]]
+
+Soft limits JSON used:
+{
+  "sample_step_mm": 5.0,
+  "default_detour_margin_mm": 35.0,
+  "max_waypoints": 8,
+  "boxes": [
+    {
+      "name": "overhead_frame_bar",
+      "xmin": -800.0,
+      "xmax": 210.0,
+      "ymin": 270.0,
+      "ymax": 730.0,
+      "z_min": 125.0,
+      "margin_xy": 5.0,
+      "margin_z": 5.0
+    },
+    {
+      "name": "box_2",
+      "xmin": 51.0,
+      "xmax": 210.375,
+      "ymin": 554.625,
+      "ymax": 648.125,
+      "z_min": 65.0,
+      "margin_xy": 25.0,
+      "margin_z": 5.0
+    }
+  ]
+}

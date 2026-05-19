@@ -1,0 +1,2 @@
+z_level_mm,name,robot_x_mm,robot_y_mm,robot_z_mm,robot_phi_deg,overhead_u_raw_px,overhead_v_raw_px,overhead_u_used_px,overhead_v_used_px,overhead_theta_deg
+0.0,P1_front_left,294.9784613473085,284.98727300858616,0.0,-0.10167336900009616,1046.3647766113281,213.27579803466796,1043.1222717285157,213.4199966430664,160.46939804731133
