@@ -141,9 +141,9 @@ SCAN_PRESETS = {
 
     # Good first real scan. Keep Z values conservative.
     "global_coarse": {
-        "x": list(range(90, 400, 100)),
-        "y": list(range(250, 550, 100)),
-        "z": list(range(0, 200, 50)),
+        "x": list(range(100, 400, 20)),
+        "y": list(range(250, 550, 20)),
+        "z": list(range(0, 200, 25)),
     },
 
     # Better accuracy in the main grocery staging area.

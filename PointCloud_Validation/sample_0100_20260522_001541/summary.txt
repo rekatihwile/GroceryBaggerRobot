@@ -1,0 +1,24 @@
+Selected pair index: 100
+Left image: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images\Stereo_Left_0100.jpg
+Right image: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images\Stereo_Right_0100.jpg
+YOLO weights: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\yolo_weights\Validate_Only_100_Training_Best.pt
+RAFT checkpoint: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\RAFT-Stereo\models\raftstereo-middlebury.pth
+Stereo calibration: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\stereo_calibration.npz
+Rectify inputs: False
+
+Detections: 11
+
+#00 class=Dove Deodorant class_id=5 conf=0.991 points=5059 bbox=[210.0, 280.6, 323.2, 348.2] ply=instance_00_Dove_Deodorant_conf0.99.ply
+#01 class=Paper Towels class_id=7 conf=0.988 points=23876 bbox=[35.6, 0.0, 233.6, 198.6] ply=instance_01_Paper_Towels_conf0.99.ply
+#02 class=Chex Mix class_id=3 conf=0.988 points=6135 bbox=[357.3, 72.1, 471.7, 159.1] ply=instance_02_Chex_Mix_conf0.99.ply
+#03 class=DC class_id=4 conf=0.986 points=6936 bbox=[325.0, 171.4, 483.4, 255.1] ply=instance_03_DC_conf0.99.ply
+#04 class=Burts Bees class_id=1 conf=0.985 points=3064 bbox=[270.0, 208.8, 336.0, 279.5] ply=instance_04_Burts_Bees_conf0.99.ply
+#05 class=Lays Chips class_id=6 conf=0.985 points=15505 bbox=[2.6, 217.3, 223.2, 369.3] ply=instance_05_Lays_Chips_conf0.99.ply
+#06 class=Pringles class_id=8 conf=0.972 points=5387 bbox=[0.0, 215.2, 104.1, 290.2] ply=instance_06_Pringles_conf0.97.ply
+#07 class=Carmax Lip Balm class_id=2 conf=0.957 points=4618 bbox=[139.1, 313.8, 245.5, 396.9] ply=instance_07_Carmax_Lip_Balm_conf0.96.ply
+#08 class=Bandaid class_id=0 conf=0.438 points=4623 bbox=[330.0, 317.4, 380.7, 423.1] ply=instance_08_Bandaid_conf0.44.ply
+#09 class=Bandaid class_id=0 conf=0.380 points=4631 bbox=[329.6, 318.4, 381.5, 423.3] ply=instance_09_Bandaid_conf0.38.ply
+#10 class=Bandaid class_id=0 conf=0.262 points=4647 bbox=[330.6, 316.9, 381.5, 423.7] ply=instance_10_Bandaid_conf0.26.ply
+
+Combined pointcloud: combined_segmented_pointcloud.ply
+Combined points: 84481

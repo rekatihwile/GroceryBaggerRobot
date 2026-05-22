@@ -106,7 +106,7 @@ TORCH_DEVICE = "cuda:0"  # Falls back to "cpu" if unavailable.
 USE_HALF = True          # Only used when CUDA is available.
 PRINT_DEVICE_INFO = True
 
-YOLO_WEIGHTS_PATH = "yolo_weights/best.pt"
+YOLO_WEIGHTS_PATH = "yolo_weights/Validate_Only_100_Training_Best.pt"
 YOLO_FALLBACK_WEIGHTS_PATH = "best.pt"
 YOLO_DEVICE = TORCH_DEVICE
 YOLO_HALF = True
@@ -199,7 +199,7 @@ Z_JOG_MM = 5.0
 PHI_JOG_DEG = 5.0
 
 CLAW_OPEN_DEG = 75
-CLAW_CLOSED_DEG = 5
+CLAW_CLOSED_DEG = 0
 CLAW_SETTLE_S = 0.30
 
 USE_EE_FK_Z_BIAS_CORRECTION = True

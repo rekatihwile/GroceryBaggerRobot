@@ -322,7 +322,7 @@ void setupAllDrivers()
     setupDriver(driver1, 1400);
     setupDriver(driver2, 1700);
     setupDriver(driver3, J3_RUN_CURRENT_MA);
-    setupDriver(driver4, 600);
+    setupDriver(driver4, 2000);
 }
 
 // ========================================

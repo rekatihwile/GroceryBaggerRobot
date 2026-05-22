@@ -1,0 +1,24 @@
+Selected pair index: 9
+Left image: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images\Stereo_Left_0009.jpg
+Right image: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images\Stereo_Right_0009.jpg
+YOLO weights: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\yolo_weights\Validate_Only_100_Training_Best.pt
+RAFT checkpoint: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\RAFT-Stereo\models\raftstereo-middlebury.pth
+Stereo calibration: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\stereo_calibration.npz
+Rectify inputs: False
+
+Detections: 11
+
+#00 class=DC class_id=4 conf=0.988 points=5510 bbox=[299.5, 66.1, 358.1, 189.8] ply=instance_00_DC_conf0.99.ply
+#01 class=Dove Deodorant class_id=5 conf=0.988 points=4679 bbox=[46.0, 247.2, 158.5, 324.1] ply=instance_01_Dove_Deodorant_conf0.99.ply
+#02 class=Paper Towels class_id=7 conf=0.987 points=27678 bbox=[224.6, 213.5, 463.3, 460.1] ply=instance_02_Paper_Towels_conf0.99.ply
+#03 class=Bandaid class_id=0 conf=0.985 points=8236 bbox=[148.1, 276.6, 216.9, 414.2] ply=instance_03_Bandaid_conf0.99.ply
+#04 class=Lays Chips class_id=6 conf=0.982 points=13584 bbox=[102.1, 96.1, 279.6, 250.3] ply=instance_04_Lays_Chips_conf0.98.ply
+#05 class=Burts Bees class_id=1 conf=0.974 points=2468 bbox=[196.7, 82.7, 261.9, 141.9] ply=instance_05_Burts_Bees_conf0.97.ply
+#06 class=Pringles class_id=8 conf=0.967 points=4853 bbox=[450.4, 123.3, 532.5, 213.8] ply=instance_06_Pringles_conf0.97.ply
+#07 class=Carmax Lip Balm class_id=2 conf=0.787 points=4906 bbox=[373.3, 224.3, 470.8, 293.0] ply=instance_07_Carmax_Lip_Balm_conf0.79.ply
+#08 class=Chex Mix class_id=3 conf=0.696 points=7652 bbox=[25.5, 60.3, 130.2, 183.5] ply=instance_08_Chex_Mix_conf0.70.ply
+#09 class=Carmax Lip Balm class_id=2 conf=0.468 points=4887 bbox=[374.7, 224.4, 470.6, 293.3] ply=instance_09_Carmax_Lip_Balm_conf0.47.ply
+#10 class=Chex Mix class_id=3 conf=0.348 points=7670 bbox=[25.0, 60.3, 130.0, 184.1] ply=instance_10_Chex_Mix_conf0.35.ply
+
+Combined pointcloud: combined_segmented_pointcloud.ply
+Combined points: 92123

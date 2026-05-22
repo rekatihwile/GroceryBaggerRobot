@@ -102,8 +102,35 @@ class SimpleStereoCamera:
 
         return True, frame, left, right
 
+    def capture_burst(self, n: int = 5, delay_s: float = 0.05) -> list[dict]:
+        """Capture n stereo frame pairs.
+
+        Returns a list of dicts, each with keys:
+            "frame"  — full side-by-side frame (HxW)
+            "left"   — left half (Hx(W//2))
+            "right"  — right half (Hx(W//2))
+
+        Frames where read fails are skipped silently.
+        """
+        import time
+        frames: list[dict] = []
+        for i in range(int(n)):
+            ok, frame, left, right = self.read_pair()
+            if ok and frame is not None:
+                frames.append({"frame": frame, "left": left, "right": right})
+            if i < int(n) - 1 and delay_s > 0:
+                time.sleep(delay_s)
+        return frames
+
     def release(self):
         self.cap.release()
+
+    # Context manager support
+    def __enter__(self) -> "SimpleStereoCamera":
+        return self
+
+    def __exit__(self, *args) -> None:
+        self.release()
 
 
 # -----------------------------
