@@ -36,6 +36,8 @@ TOP_SURFACE_MEDIAN_BAND_MM: float = 10.0
 USE_OBJECT_MASK_MINOR_AXIS_PHI: bool = True
 PHI_AXIS_ENDPOINT_PERCENTILE: float = 15.0
 PHI_AXIS_MIN_POINTS_PER_SIDE: int = 8
+PHI_RAY_ANGLE_STEP_DEG: float = 2.0
+PHI_RAY_LINE_BAND_MM: float = 8.0
 
 
 # ============================================================
@@ -200,6 +202,127 @@ def normalize_phi_0_180(phi_deg: float) -> float:
     return float(phi_deg % 180.0)
 
 
+def _mask_ray_chords(
+    yolo_det: "YOLODetection",
+    *,
+    angle_step_deg: float = PHI_RAY_ANGLE_STEP_DEG,
+) -> list[tuple[float, float]]:
+    """Return (angle_deg, chord_px) for centroid-crossing mask rays."""
+    mask = getattr(yolo_det, "mask", None)
+    centroid = np.asarray(getattr(yolo_det, "centroid_px", None), dtype=np.float64).reshape(-1)
+    if mask is None or centroid.size < 2 or not np.all(np.isfinite(centroid[:2])):
+        return []
+
+    mask_u8 = (np.asarray(mask) > 0).astype(np.uint8)
+    ys, xs = np.nonzero(mask_u8)
+    if len(xs) < (2 * PHI_AXIS_MIN_POINTS_PER_SIDE):
+        return []
+
+    coords = np.column_stack([xs.astype(np.float64), ys.astype(np.float64)])
+    offsets = coords - centroid[:2].reshape(1, 2)
+    if not np.any(np.all(np.isfinite(offsets), axis=1)):
+        return []
+
+    angles = np.arange(0.0, 180.0, max(0.25, float(angle_step_deg)), dtype=np.float64)
+    chords: list[tuple[float, float]] = []
+    for angle_deg in angles:
+        theta = np.deg2rad(float(angle_deg))
+        axis = np.array([np.cos(theta), np.sin(theta)], dtype=np.float64)
+        normal = np.array([-axis[1], axis[0]], dtype=np.float64)
+        proj = offsets @ axis
+        perp = np.abs(offsets @ normal)
+
+        band_px = max(1.5, min(6.0, 0.02 * max(float(yolo_det.major_axis_length_px), 1.0)))
+        on_ray = perp <= band_px
+        if int(on_ray.sum()) < (2 * PHI_AXIS_MIN_POINTS_PER_SIDE):
+            continue
+        neg = proj[on_ray & (proj <= 0.0)]
+        pos = proj[on_ray & (proj >= 0.0)]
+        if len(neg) < PHI_AXIS_MIN_POINTS_PER_SIDE or len(pos) < PHI_AXIS_MIN_POINTS_PER_SIDE:
+            continue
+
+        lo = float(np.percentile(neg, PHI_AXIS_ENDPOINT_PERCENTILE))
+        hi = float(np.percentile(pos, 100.0 - PHI_AXIS_ENDPOINT_PERCENTILE))
+        chord = hi - lo
+        if np.isfinite(chord) and chord > 1e-6:
+            chords.append((float(angle_deg), float(chord)))
+
+    return chords
+
+
+def estimate_mask_centroid_ray_angle_deg(
+    yolo_det: "YOLODetection",
+    *,
+    select: str,
+    perpendicular: bool = False,
+) -> tuple[float | None, str]:
+    """Pick a mask angle by ray-casting from the centroid to the mask boundary."""
+    chords = _mask_ray_chords(yolo_det)
+    if not chords:
+        return None, f"centroid_{select}_ray_unavailable"
+
+    if select == "longest":
+        angle, _chord = max(chords, key=lambda item: item[1])
+    elif select == "shortest":
+        angle, _chord = min(chords, key=lambda item: item[1])
+    else:
+        raise ValueError(f"Unknown ray select={select!r}")
+
+    if perpendicular:
+        angle += 90.0
+    label = f"centroid_{select}_ray"
+    if perpendicular:
+        label += "_perp"
+    return normalize_phi_0_180(angle), label
+
+
+def _phi_from_pointcloud_uv_axis(
+    yolo_det: "YOLODetection",
+    points_cam: np.ndarray,
+    point_uv_px: np.ndarray,
+    bundle: Any,
+    axis_angle_deg: float,
+    source_label: str,
+) -> tuple[float | None, str]:
+    if (
+        point_uv_px is None
+        or len(point_uv_px) != len(points_cam)
+        or len(points_cam) < (2 * PHI_AXIS_MIN_POINTS_PER_SIDE)
+    ):
+        return None, f"{source_label}_pointcloud_unavailable"
+
+    theta = np.radians(float(axis_angle_deg))
+    axis_uv = np.array([np.cos(theta), np.sin(theta)], dtype=np.float64)
+    uv_offsets = (
+        np.asarray(point_uv_px, dtype=np.float64).reshape(-1, 2)
+        - yolo_det.centroid_px.reshape(1, 2)
+    )
+    proj = uv_offsets @ axis_uv
+
+    lo_q = float(np.percentile(proj, PHI_AXIS_ENDPOINT_PERCENTILE))
+    hi_q = float(np.percentile(proj, 100.0 - PHI_AXIS_ENDPOINT_PERCENTILE))
+    low_mask = proj <= lo_q
+    high_mask = proj >= hi_q
+
+    if (
+        int(low_mask.sum()) < PHI_AXIS_MIN_POINTS_PER_SIDE
+        or int(high_mask.sum()) < PHI_AXIS_MIN_POINTS_PER_SIDE
+    ):
+        return None, f"{source_label}_too_few_endpoint_points"
+
+    low_cam = np.median(points_cam[low_mask], axis=0)
+    high_cam = np.median(points_cam[high_mask], axis=0)
+    low_robot = cam_xyz_to_robot_xyz(low_cam, bundle)
+    high_robot = cam_xyz_to_robot_xyz(high_cam, bundle)
+    delta_xy = high_robot[:2] - low_robot[:2]
+
+    if not np.all(np.isfinite(delta_xy)) or float(np.linalg.norm(delta_xy)) < 1e-6:
+        return None, f"{source_label}_degenerate_robot_delta"
+
+    phi = normalize_phi_0_180(float(np.degrees(np.arctan2(delta_xy[1], delta_xy[0]))))
+    return phi, source_label
+
+
 def estimate_pick_phi_from_mask_minor_axis(
     yolo_det: "YOLODetection",
     points_cam: np.ndarray,
@@ -221,36 +344,40 @@ def estimate_pick_phi_from_mask_minor_axis(
     ):
         return None, "mask_minor_axis_unavailable"
 
-    theta = np.radians(float(yolo_det.minor_axis_angle_deg))
-    axis_uv = np.array([np.cos(theta), np.sin(theta)], dtype=np.float64)
-    uv_offsets = (
-        np.asarray(point_uv_px, dtype=np.float64).reshape(-1, 2)
-        - yolo_det.centroid_px.reshape(1, 2)
+    return _phi_from_pointcloud_uv_axis(
+        yolo_det,
+        points_cam,
+        point_uv_px,
+        bundle,
+        float(yolo_det.minor_axis_angle_deg),
+        "mask_minor_axis_pointcloud",
     )
-    proj = uv_offsets @ axis_uv
 
-    lo_q = float(np.percentile(proj, PHI_AXIS_ENDPOINT_PERCENTILE))
-    hi_q = float(np.percentile(proj, 100.0 - PHI_AXIS_ENDPOINT_PERCENTILE))
-    low_mask = proj <= lo_q
-    high_mask = proj >= hi_q
 
-    if (
-        int(low_mask.sum()) < PHI_AXIS_MIN_POINTS_PER_SIDE
-        or int(high_mask.sum()) < PHI_AXIS_MIN_POINTS_PER_SIDE
-    ):
-        return None, "mask_minor_axis_too_few_endpoint_points"
-
-    low_cam = np.median(points_cam[low_mask], axis=0)
-    high_cam = np.median(points_cam[high_mask], axis=0)
-    low_robot = cam_xyz_to_robot_xyz(low_cam, bundle)
-    high_robot = cam_xyz_to_robot_xyz(high_cam, bundle)
-    delta_xy = high_robot[:2] - low_robot[:2]
-
-    if not np.all(np.isfinite(delta_xy)) or float(np.linalg.norm(delta_xy)) < 1e-6:
-        return None, "mask_minor_axis_degenerate_robot_delta"
-
-    phi = normalize_phi_0_180(float(np.degrees(np.arctan2(delta_xy[1], delta_xy[0]))))
-    return phi, "mask_minor_axis_pointcloud"
+def estimate_pick_phi_from_centroid_rays(
+    yolo_det: "YOLODetection",
+    points_cam: np.ndarray,
+    point_uv_px: np.ndarray,
+    bundle: Any,
+    *,
+    select: str,
+    perpendicular: bool = False,
+) -> tuple[float | None, str]:
+    angle, source = estimate_mask_centroid_ray_angle_deg(
+        yolo_det,
+        select=select,
+        perpendicular=perpendicular,
+    )
+    if angle is None:
+        return None, source
+    return _phi_from_pointcloud_uv_axis(
+        yolo_det,
+        points_cam,
+        point_uv_px,
+        bundle,
+        angle,
+        f"{source}_pointcloud",
+    )
 
 
 def estimate_pick_phi_from_pointcloud_short_side(
@@ -289,3 +416,54 @@ def estimate_pick_phi_from_pointcloud_short_side(
 
     phi = normalize_phi_0_180(float(np.degrees(np.arctan2(short_vec[1], short_vec[0]))))
     return phi, "pointcloud_short_side"
+
+
+def estimate_pick_phi_from_pointcloud_shortest_path(
+    points_cam: np.ndarray,
+    bundle: Any,
+) -> tuple[float | None, str]:
+    """Estimate phi along the shortest center-crossing chord in robot XY."""
+    if points_cam is None or len(points_cam) < (2 * PHI_AXIS_MIN_POINTS_PER_SIDE):
+        return None, "pointcloud_shortest_path_unavailable"
+
+    try:
+        points_robot = cam_points_to_robot_xyz(points_cam, bundle)
+    except Exception as exc:
+        print(f"[POINTCLOUD] Shortest-path phi failed; transform error: {exc}")
+        return None, "pointcloud_shortest_path_transform_failed"
+
+    xy = np.asarray(points_robot[:, :2], dtype=np.float64)
+    xy = xy[np.all(np.isfinite(xy), axis=1)]
+    if len(xy) < (2 * PHI_AXIS_MIN_POINTS_PER_SIDE):
+        return None, "pointcloud_shortest_path_too_few_points"
+
+    center = np.median(xy, axis=0)
+    offsets = xy - center.reshape(1, 2)
+    spans = np.ptp(xy, axis=0)
+    band_mm = max(float(PHI_RAY_LINE_BAND_MM), 0.04 * float(max(spans[0], spans[1], 1.0)))
+
+    best_angle: float | None = None
+    best_chord = float("inf")
+    for angle_deg in np.arange(0.0, 180.0, max(0.25, float(PHI_RAY_ANGLE_STEP_DEG)), dtype=np.float64):
+        theta = np.deg2rad(float(angle_deg))
+        axis = np.array([np.cos(theta), np.sin(theta)], dtype=np.float64)
+        normal = np.array([-axis[1], axis[0]], dtype=np.float64)
+        proj = offsets @ axis
+        perp = np.abs(offsets @ normal)
+        on_path = perp <= band_mm
+        if int(on_path.sum()) < (2 * PHI_AXIS_MIN_POINTS_PER_SIDE):
+            continue
+        neg = proj[on_path & (proj <= 0.0)]
+        pos = proj[on_path & (proj >= 0.0)]
+        if len(neg) < PHI_AXIS_MIN_POINTS_PER_SIDE or len(pos) < PHI_AXIS_MIN_POINTS_PER_SIDE:
+            continue
+        lo = float(np.percentile(neg, PHI_AXIS_ENDPOINT_PERCENTILE))
+        hi = float(np.percentile(pos, 100.0 - PHI_AXIS_ENDPOINT_PERCENTILE))
+        chord = hi - lo
+        if np.isfinite(chord) and chord > 1e-6 and chord < best_chord:
+            best_chord = chord
+            best_angle = float(angle_deg)
+
+    if best_angle is None:
+        return None, "pointcloud_shortest_path_degenerate"
+    return normalize_phi_0_180(best_angle), "pointcloud_shortest_path"

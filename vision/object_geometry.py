@@ -19,7 +19,9 @@ from vision.pointcloud import (
     cam_points_to_robot_xyz,
     cam_xyz_to_robot_xyz,
     choose_object_target_point,
+    estimate_pick_phi_from_centroid_rays,
     estimate_pick_phi_from_mask_minor_axis,
+    estimate_pick_phi_from_pointcloud_shortest_path,
     estimate_pick_phi_from_pointcloud_short_side,
 )
 
@@ -185,6 +187,28 @@ def build_object_candidate(
     if PICK_PHI_MODE == "triangulated_short_side":
         pick_phi, pick_phi_source = estimate_pick_phi_from_pointcloud_short_side(
             points_cam, bundle
+        )
+    elif PICK_PHI_MODE == "pointcloud_shortest_path":
+        pick_phi, pick_phi_source = estimate_pick_phi_from_pointcloud_shortest_path(
+            points_cam, bundle
+        )
+    elif PICK_PHI_MODE == "centroid_longest_ray_perp":
+        pick_phi, pick_phi_source = estimate_pick_phi_from_centroid_rays(
+            yolo_det,
+            points_cam,
+            point_uv_px,
+            bundle,
+            select="longest",
+            perpendicular=True,
+        )
+    elif PICK_PHI_MODE == "centroid_shortest_ray_parallel":
+        pick_phi, pick_phi_source = estimate_pick_phi_from_centroid_rays(
+            yolo_det,
+            points_cam,
+            point_uv_px,
+            bundle,
+            select="shortest",
+            perpendicular=False,
         )
     elif PICK_PHI_MODE == "overhead_minor_axis":
         pick_phi, pick_phi_source = None, "overhead_minor_axis_pending"

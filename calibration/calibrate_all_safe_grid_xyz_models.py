@@ -15,11 +15,13 @@ What it builds:
   5) Global stereo affine fits from logged stereo samples
   6) Support-point arrays for runtime confidence / nearest-neighbor checks
   7) Optional visible reference poses for later hidden-target bias correction
+  8) Per-camera visibility map JSON + auto-derived "refined" grid for re-scanning
 
 Outputs:
   robot_calibration_bundle.npz
   robot_calibration_scan_raw.csv
   robot_calibration_report.txt
+  robot_calibration_visibility.json      (NEW - per-camera visibility map + refined grid)
 
 Safety:
   - Requires robot.py to support fail-closed soft limits.
@@ -42,6 +44,7 @@ Expected files in same folder:
 """
 
 import csv
+import json
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -99,8 +102,6 @@ from hardware.cameras.stereo_apriltag_viewer import (
 # ============================================================
 
 # User-facing floor-plane height convention.
-# Internal calibration still stores robot_z_mm because robot.move_cartesian() uses robot Z.
-# But these constants let reports/bundles show physical height above the floor.
 DISTANCE_FROM_ORIGIN_TO_FLOOR_PLANE_MM = 575.0
 L1_TO_L2_HEIGHT_DIFFERENCE_MM = 55.0
 J3_ZERO_TO_EE_DROP_MM = 400.0
@@ -130,30 +131,24 @@ SCAN_MODE = "global_coarse"
 # SCAN_MODE = "global_coarse"
 # SCAN_MODE = "staging_refined"
 # SCAN_MODE = "local_dense"
+# SCAN_MODE = "from_dynamic_grid"   # uses robot_calibration_visibility.json from previous run
 
 SCAN_PRESETS = {
-    # First safe sanity check. Use this first after config/soft-limit changes.
     "smoke": {
         "x": [250, 350],
         "y": [300, 400],
         "z": [DEFAULT_TRAVEL_Z_MM],
     },
-
-    # Good first real scan. Keep Z values conservative.
     "global_coarse": {
-        "x": list(range(100, 400, 20)),
-        "y": list(range(250, 550, 20)),
-        "z": list(range(0, 200, 25)),
+        "x": list(range(50, 500, 80)),
+        "y": list(range(50, 450, 50)),
+        "z": list(range(0, 100, 25)),
     },
-
-    # Better accuracy in the main grocery staging area.
     "staging_refined": {
         "x": list(range(75, 500, 25)),
         "y": list(range(225, 600, 25)),
         "z": [0, 25.0],
     },
-
-    # Only use this in a smaller region once everything else is stable.
     "local_dense": {
         "x": list(range(200, 401, 10)),
         "y": list(range(275, 476, 10)),
@@ -161,14 +156,19 @@ SCAN_PRESETS = {
     },
 }
 
-# Optional visible reference poses. These are useful later for correcting hidden targets
-# like the bag drop location. Runtime can move to one of these visible poses, measure
-# camera-vs-FK bias, and apply that bias to hidden taught targets.
-#
-# Format:
-#   (name, x_mm, y_mm, z_mm, phi_deg)
-#
-# Keep them in areas where the overhead camera reliably sees the EE tag.
+# Path used by SCAN_MODE="from_dynamic_grid".
+# This is also where the visibility map is written after every scan.
+DYNAMIC_GRID_PATH = Path("robot_calibration_visibility.json")
+
+# Knobs for how the refined grid is constructed from visibility data.
+# After a scan, the bounding box of "both-cameras-visible" points (per Z) becomes
+# the new scan region, sampled at REFINED_GRID_STEP_MM, optionally shrunk by
+# REFINED_GRID_INSET_MM so we stay safely inside the visible region.
+REFINED_GRID_STEP_MM = 30.0
+REFINED_GRID_INSET_MM = 0.0
+REFINED_GRID_MIN_POINTS_PER_AXIS = 3
+REFINED_GRID_MIN_BOTH_VISIBLE_FOR_REFINE = 4
+
 REFERENCE_POSES = [
     ("visible_ref_center", 300.0, 350.0, DEFAULT_TRAVEL_Z_MM, 0.0),
 ]
@@ -186,41 +186,26 @@ POINT_TIMEOUT_S = 3.0
 MIN_OVERHEAD_SAMPLES = 4
 MIN_STEREO_SAMPLES = 2
 
+# Wait for BOTH cameras to either fill up or visibly fail before moving on.
+# If True, early-exit requires both overhead and stereo to be "done"
+# (either at SAMPLES_PER_POINT samples or timed out).
+WAIT_FOR_STEREO = True
+
 # Build filters.
 MIN_POINTS_PER_HOMOGRAPHY = 4
 RECOMMENDED_POINTS_PER_HOMOGRAPHY = 8
 
-# Runtime confidence metadata thresholds. These are saved into the bundle.
 MAX_RUNTIME_NEAREST_SAMPLE_DIST_MM = 90.0
 MAX_RUNTIME_HOMOGRAPHY_RMS_MM = 25.0
 
 # ============================================================
 # STEREO XYZ MODEL KNOBS
 # ============================================================
-# These are small calibration/axis knobs for the full 3D stereo model.
-# They do NOT change the raw stereo triangulation; they only affect the
-# fitted camera<->robot matrices saved into robot_calibration_bundle.npz.
-#
-# Convention:
-#   robot_xyz = [robot_x_mm, robot_y_mm, robot_z_mm]
-#   cam_xyz   = [stereo_x_mm, stereo_y_mm, stereo_z_mm]
-#
-# We fit:
-#   B_cam_from_robot_xyz_3x4 @ [robot_x, robot_y, robot_z, 1] -> cam_xyz
-#   A_robot_from_cam_xyz_3x4 @ [cam_x, cam_y, cam_z, 1]       -> robot_xyz
-#
-# Runtime delta convention:
-#   delta_cam   = object_cam_xyz - ee_cam_xyz
-#   delta_robot = A_robot_from_cam_xyz_3x4[:, :3] @ delta_cam
-#
-# Optional offsets below let you compensate for known fixed offsets between the
-# triangulated EE tag center and the actual gripper/tool point. Leave zero first.
 STEREO_EE_TAG_TO_TOOL_OFFSET_ROBOT_MM = np.array([0.0, 0.0, 0.0], dtype=np.float64)
 STEREO_CAM_X_OFFSET_MM = 0.0
 STEREO_CAM_Y_OFFSET_MM = 0.0
 STEREO_CAM_Z_OFFSET_MM = 0.0
 
-# Require enough 3D spread to fit a meaningful XYZ model.
 MIN_STEREO_XYZ_FIT_SAMPLES = 8
 WARN_STEREO_XYZ_FIT_RMSE_MM = 25.0
 
@@ -232,24 +217,9 @@ OUT_BUNDLE = Path("robot_calibration_bundle.npz")
 OUT_RAW_CSV = Path("robot_calibration_scan_raw.csv")
 OUT_REPORT = Path("robot_calibration_report.txt")
 
-WINDOW_OVERHEAD = "Calibrate All - Overhead"
-WINDOW_STEREO = "Calibrate All - Stereo"
-
-
-# ============================================================
-# SCAN PRESET RESOLUTION
-# ============================================================
-
-def get_scan_grids():
-    if SCAN_MODE not in SCAN_PRESETS:
-        raise KeyError(f"Unknown SCAN_MODE={SCAN_MODE!r}. Options={list(SCAN_PRESETS)}")
-
-    preset = SCAN_PRESETS[SCAN_MODE]
-    x_grid = [float(v) for v in preset["x"]]
-    y_grid = [float(v) for v in preset["y"]]
-    z_levels = [float(v) for v in preset["z"]]
-
-    return x_grid, y_grid, z_levels
+# One combined display window now hosts both camera views.
+WINDOW_COMBINED = "Calibrate All - Overhead (top) + Stereo (bottom)"
+COMBINED_WINDOW_WIDTH = 1280
 
 
 # ============================================================
@@ -303,6 +273,72 @@ class ScanRow:
 
 
 # ============================================================
+# RUNNING CALIBRATION STATS  (used for live RMS display)
+# ============================================================
+
+class RunningCalibrationStats:
+    """Accumulates per-Z overhead samples and global stereo samples so we
+    can recompute and display the homography RMS and stereo fit RMSE
+    after every accepted point."""
+
+    def __init__(self):
+        # Per Z level: list of (uv_used, robot_xy) tuples as np.float64 arrays
+        self.overhead_per_z: dict[float, list[tuple[np.ndarray, np.ndarray]]] = {}
+        # Stereo lists, parallel
+        self.stereo_robot_xyz: list[np.ndarray] = []
+        self.stereo_cam_xyz: list[np.ndarray] = []
+
+    def add_overhead(self, z_mm: float, uv_used: tuple, robot_xy: tuple):
+        z_key = round(float(z_mm), 4)
+        self.overhead_per_z.setdefault(z_key, []).append((
+            np.asarray(uv_used, dtype=np.float64).reshape(2),
+            np.asarray(robot_xy, dtype=np.float64).reshape(2),
+        ))
+
+    def add_stereo(self, robot_xyz: tuple, cam_xyz: tuple):
+        self.stereo_robot_xyz.append(np.asarray(robot_xyz, dtype=np.float64).reshape(3))
+        self.stereo_cam_xyz.append(np.asarray(cam_xyz, dtype=np.float64).reshape(3))
+
+    def current_overhead_rms(self, z_mm: float):
+        """Returns (rms_mm or None, n_points)."""
+        z_key = round(float(z_mm), 4)
+        pts = self.overhead_per_z.get(z_key, [])
+        n = len(pts)
+        if n < MIN_POINTS_PER_HOMOGRAPHY:
+            return None, n
+        img_pts = np.array([p[0] for p in pts], dtype=np.float32)
+        robot_pts = np.array([p[1] for p in pts], dtype=np.float32)
+        try:
+            H, _ = cv2.findHomography(img_pts, robot_pts, method=0)
+        except cv2.error:
+            return None, n
+        if H is None:
+            return None, n
+        pred = cv2.perspectiveTransform(img_pts.reshape(-1, 1, 2), H).reshape(-1, 2)
+        err = pred - robot_pts
+        rms = float(np.sqrt(np.mean(np.sum(err ** 2, axis=1))))
+        return rms, n
+
+    def current_stereo_rmse(self):
+        """Returns (rmse_mm or None, n_points) for the inverse stereo fit
+        (cam_xyz -> robot_xyz). This is the RMSE actually used by visual servo."""
+        n = len(self.stereo_robot_xyz)
+        if n < 4:
+            return None, n
+        robot = np.stack(self.stereo_robot_xyz, axis=0)
+        cam = np.stack(self.stereo_cam_xyz, axis=0)
+        cam_xyz1 = np.column_stack([cam, np.ones(n)])
+        try:
+            A_T, *_ = np.linalg.lstsq(cam_xyz1, robot, rcond=None)
+        except np.linalg.LinAlgError:
+            return None, n
+        pred = cam_xyz1 @ A_T
+        res = pred - robot
+        rmse = float(np.sqrt(np.mean(np.sum(res ** 2, axis=1))))
+        return rmse, n
+
+
+# ============================================================
 # CAMERA HELPERS
 # ============================================================
 
@@ -349,15 +385,6 @@ def read_overhead_once(cap: cv2.VideoCapture, detector):
     return frame, dets.get(EE_TAG_ID)
 
 
-def draw_overhead(frame, det, lines):
-    out = draw_detection(frame, det, f"OVERHEAD EE {EE_TAG_ID}")
-    for i, line in enumerate(lines):
-        y = 30 + i * 27
-        cv2.putText(out, line, (14, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 4, cv2.LINE_AA)
-        cv2.putText(out, line, (14, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
-    return out
-
-
 # ============================================================
 # STEREO HELPERS
 # ============================================================
@@ -396,7 +423,6 @@ def triangulate_center_raw(left_xy: np.ndarray, right_xy: np.ndarray, calib: dic
     X_h = cv2.triangulatePoints(P_left, P_right, left_pt, right_pt)
     xyz = (X_h[:3] / X_h[3]).reshape(3).astype(np.float64)
 
-    # Match the existing convention from your stereo PD scripts.
     xyz[2] *= -1.0
     return xyz
 
@@ -422,14 +448,64 @@ def read_stereo_once(stereo: SimpleStereoCamera, detector, stereo_calib):
     return left, right, det_l, det_r, xyz
 
 
-def draw_stereo(left, right, det_l, det_r, xyz, lines):
+def draw_stereo_panel(left, right, det_l, det_r, xyz):
+    """Render the stereo panel with detection boxes and the XYZ readout
+    inline (the XYZ is tightly bound to the stereo view)."""
     if left is None or right is None:
         return None
     left_draw = draw_detection(left, det_l, "LEFT")
     right_draw = draw_detection(right, det_r, "RIGHT")
+    inner_lines = []
     if xyz is not None:
-        lines = list(lines) + [f"stereo XYZ=({xyz[0]:+.1f},{xyz[1]:+.1f},{xyz[2]:+.1f}) mm"]
-    return make_preview(left_draw, right_draw, lines)
+        inner_lines.append(f"stereo XYZ=({xyz[0]:+.1f},{xyz[1]:+.1f},{xyz[2]:+.1f}) mm")
+    return make_preview(left_draw, right_draw, inner_lines)
+
+
+# ============================================================
+# COMBINED VIEW
+# ============================================================
+
+def _put_text_outlined(img, text, org, scale=0.60, color=(255, 255, 255)):
+    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), 4, cv2.LINE_AA)
+    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
+
+
+def make_combined_preview(overhead_img, stereo_img, header_lines, target_width=COMBINED_WINDOW_WIDTH):
+    """Stack overhead (top) over stereo (bottom) in one image, scale both
+    to the same width, and overlay header_lines on top."""
+    panels = []
+    for img in (overhead_img, stereo_img):
+        if img is None:
+            continue
+        h, w = img.shape[:2]
+        if w != target_width:
+            new_h = max(1, int(round(h * (target_width / w))))
+            img = cv2.resize(img, (target_width, new_h))
+        panels.append(img)
+
+    if not panels:
+        # Nothing yet to show, return a small placeholder so the window still appears.
+        placeholder = np.full((180, target_width, 3), 40, dtype=np.uint8)
+        for i, line in enumerate(header_lines):
+            _put_text_outlined(placeholder, line, (12, 26 + i * 24))
+        return placeholder
+
+    separator = np.full((6, target_width, 3), 70, dtype=np.uint8)
+    pieces = [panels[0]]
+    for p in panels[1:]:
+        pieces.extend([separator, p])
+    combined = np.vstack(pieces)
+
+    # Subtle dark band behind header text so it stays readable on bright backgrounds.
+    band_h = min(30 + 24 * len(header_lines), combined.shape[0])
+    band = combined[:band_h].copy()
+    overlay = np.zeros_like(band)
+    combined[:band_h] = cv2.addWeighted(band, 0.55, overlay, 0.45, 0)
+
+    for i, line in enumerate(header_lines):
+        _put_text_outlined(combined, line, (12, 26 + i * 24))
+
+    return combined
 
 
 # ============================================================
@@ -479,16 +555,28 @@ def precheck_point(robot: Robot, x: float, y: float, z: float, phi: float):
 # MEASUREMENT
 # ============================================================
 
-def measure_current_pose(row, robot, overhead_cap, stereo, detector, K_overhead, dist_overhead, stereo_calib):
+def measure_current_pose(
+    row,
+    robot,
+    overhead_cap,
+    stereo,
+    detector,
+    K_overhead,
+    dist_overhead,
+    stereo_calib,
+    running_stats: RunningCalibrationStats | None = None,
+):
     overhead_raw_samples = []
     overhead_used_samples = []
     overhead_theta_samples = []
     stereo_samples = []
     deadline = time.time() + POINT_TIMEOUT_S
 
-    while time.time() < deadline:
-        frame, det_o = read_overhead_once(overhead_cap, detector)
+    stereo_enabled = stereo is not None
 
+    while time.time() < deadline:
+        # ---- OVERHEAD ----
+        frame, det_o = read_overhead_once(overhead_cap, detector)
         if frame is not None and det_o is not None:
             raw_uv = np.asarray(det_o.center, dtype=np.float64).reshape(2)
             used_uv = undistort_uv(raw_uv, K_overhead, dist_overhead)
@@ -496,8 +584,9 @@ def measure_current_pose(row, robot, overhead_cap, stereo, detector, K_overhead,
             overhead_used_samples.append(used_uv)
             overhead_theta_samples.append(float(det_o.theta_deg))
 
+        # ---- STEREO ----
         left = right = det_l = det_r = xyz = None
-        if stereo is not None:
+        if stereo_enabled:
             left, right, det_l, det_r, xyz = read_stereo_once(stereo, detector, stereo_calib)
             if det_l is not None and det_r is not None:
                 ul, vl = det_l.center
@@ -512,36 +601,79 @@ def measure_current_pose(row, robot, overhead_cap, stereo, detector, K_overhead,
 
         n_o = len(overhead_raw_samples)
         n_s = len(stereo_samples)
-        lines = [
-            f"Calibrate all | {row.grid_name} | z={row.z_level_mm:.1f}",
-            f"overhead samples {n_o}/{SAMPLES_PER_POINT} | stereo samples {n_s}",
-            f"cmd=({row.x_cmd_mm:.1f},{row.y_cmd_mm:.1f},{row.z_cmd_mm:.1f})",
-            "q/ESC abort | SPACE accept early if enough samples",
+        time_left = max(0.0, deadline - time.time())
+
+        # ---- HEADER TEXT (incl. live RMS) ----
+        header_lines = [
+            f"{row.grid_name}  z={row.z_level_mm:.1f}  cmd=({row.x_cmd_mm:.0f},{row.y_cmd_mm:.0f},{row.z_cmd_mm:.0f})",
+            (
+                f"overhead {n_o}/{SAMPLES_PER_POINT}"
+                + (f"  stereo {n_s}/{SAMPLES_PER_POINT}" if stereo_enabled else "  stereo OFF")
+                + f"  time left {time_left:.1f}s"
+            ),
         ]
 
-        if frame is not None:
-            cv2.imshow(WINDOW_OVERHEAD, draw_overhead(frame, det_o, lines))
+        if running_stats is not None:
+            oh_rms, oh_n = running_stats.current_overhead_rms(row.z_level_mm)
+            if oh_rms is not None:
+                header_lines.append(
+                    f"OVERHEAD H(z={row.z_level_mm:.0f}) RMS={oh_rms:.2f} mm  n={oh_n}"
+                )
+            elif oh_n > 0:
+                header_lines.append(
+                    f"OVERHEAD H(z={row.z_level_mm:.0f}) n={oh_n} (need {MIN_POINTS_PER_HOMOGRAPHY})"
+                )
+            else:
+                header_lines.append(
+                    f"OVERHEAD H(z={row.z_level_mm:.0f}) no points yet"
+                )
 
-        if stereo is not None and left is not None and right is not None:
-            preview = draw_stereo(
-                left, right, det_l, det_r, xyz,
-                [
-                    f"Stereo logger | {row.grid_name} z={row.z_level_mm:.1f}",
-                    f"EE visible L/R: {det_l is not None}/{det_r is not None}",
-                    f"samples: {n_s}",
-                ],
-            )
-            if preview is not None:
-                cv2.imshow(WINDOW_STEREO, preview)
+            st_rmse, st_n = running_stats.current_stereo_rmse()
+            if st_rmse is not None:
+                header_lines.append(
+                    f"STEREO  robot<-cam RMSE={st_rmse:.2f} mm  n={st_n}"
+                )
+            elif st_n > 0:
+                header_lines.append(f"STEREO  n={st_n} (need 4+ for live RMSE)")
+
+        header_lines.append("q/ESC abort | SPACE accept early when minimums met")
+
+        # ---- DRAW PANELS ----
+        overhead_disp = None
+        if frame is not None:
+            overhead_disp = draw_detection(frame, det_o, f"OVERHEAD EE {EE_TAG_ID}")
+
+        stereo_disp = None
+        if stereo_enabled and left is not None and right is not None:
+            stereo_disp = draw_stereo_panel(left, right, det_l, det_r, xyz)
+
+        combined = make_combined_preview(overhead_disp, stereo_disp, header_lines)
+        if combined is not None:
+            cv2.imshow(WINDOW_COMBINED, combined)
 
         key = cv2.waitKey(1) & 0xFF
         if key in (ord("q"), 27):
             raise KeyboardInterrupt
-        if key == 32 and n_o >= MIN_OVERHEAD_SAMPLES:
+
+        # ---- EARLY-EXIT LOGIC ----
+        # We want to wait for stereo too (when enabled), so a point is "done"
+        # only when both cameras have collected enough samples, OR the timeout
+        # expires (handled by the outer while condition).
+        overhead_min_met = n_o >= MIN_OVERHEAD_SAMPLES
+        overhead_full = n_o >= SAMPLES_PER_POINT
+        if stereo_enabled and WAIT_FOR_STEREO:
+            stereo_min_met = n_s >= MIN_STEREO_SAMPLES
+            stereo_full = n_s >= SAMPLES_PER_POINT
+        else:
+            stereo_min_met = True
+            stereo_full = True
+
+        if key == 32 and overhead_min_met and stereo_min_met:
             break
-        if n_o >= SAMPLES_PER_POINT:
+        if overhead_full and stereo_full:
             break
 
+    # ---- COMMIT OVERHEAD ----
     row.overhead_samples = len(overhead_raw_samples)
     row.overhead_visible = row.overhead_samples >= MIN_OVERHEAD_SAMPLES
     if row.overhead_visible:
@@ -552,10 +684,9 @@ def measure_current_pose(row, robot, overhead_cap, stereo, detector, K_overhead,
         row.overhead_u_used_px = float(used_mean[0])
         row.overhead_v_used_px = float(used_mean[1])
         row.overhead_theta_deg = float(np.mean(overhead_theta_samples))
-
-        # Reference poses are saved, but not used for homography fitting.
         row.overhead_used_for_homography = not row.is_reference_pose
 
+    # ---- COMMIT STEREO ----
     row.stereo_samples = len(stereo_samples)
     row.stereo_visible = row.stereo_samples >= MIN_STEREO_SAMPLES
     if row.stereo_visible:
@@ -579,15 +710,68 @@ def measure_current_pose(row, robot, overhead_cap, stereo, detector, K_overhead,
 # SCAN POINT GENERATION
 # ============================================================
 
+def _load_dynamic_grid_from_json(path: Path):
+    if not path.exists():
+        raise FileNotFoundError(
+            f"SCAN_MODE='from_dynamic_grid' but {path.resolve()} does not exist. "
+            "Run a regular scan first (e.g. 'global_coarse') to generate it."
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    refined = data.get("refined_grid")
+    if not refined:
+        raise ValueError(f"{path} has no 'refined_grid' block.")
+
+    per_z_axes = refined.get("axes_per_z")
+    if not per_z_axes:
+        raise ValueError(f"{path}.refined_grid has no 'axes_per_z' block.")
+
+    z_levels = []
+    per_z_points = {}
+    all_x = set()
+    all_y = set()
+    for z_str, axes in per_z_axes.items():
+        z = float(z_str)
+        xs = [float(x) for x in axes["x"]]
+        ys = [float(y) for y in axes["y"]]
+        per_z_points[z] = [(x, y) for y in ys for x in xs]
+        z_levels.append(z)
+        all_x.update(xs)
+        all_y.update(ys)
+
+    z_levels.sort()
+    return sorted(all_x), sorted(all_y), z_levels, per_z_points
+
+
+def get_scan_grids():
+    """Returns (x_grid, y_grid, z_levels, per_z_points).
+    per_z_points is None for uniform grids and a dict {z: [(x,y),...]} for
+    SCAN_MODE='from_dynamic_grid'."""
+    if SCAN_MODE == "from_dynamic_grid":
+        return _load_dynamic_grid_from_json(DYNAMIC_GRID_PATH)
+
+    if SCAN_MODE not in SCAN_PRESETS:
+        raise KeyError(f"Unknown SCAN_MODE={SCAN_MODE!r}. Options={list(SCAN_PRESETS) + ['from_dynamic_grid']}")
+
+    preset = SCAN_PRESETS[SCAN_MODE]
+    x_grid = [float(v) for v in preset["x"]]
+    y_grid = [float(v) for v in preset["y"]]
+    z_levels = [float(v) for v in preset["z"]]
+    return x_grid, y_grid, z_levels, None
+
+
 def generate_scan_points():
-    x_grid, y_grid, z_levels = get_scan_grids()
+    x_grid, y_grid, z_levels, per_z_points = get_scan_grids()
 
     points = []
     for z in z_levels:
-        for y in y_grid:
-            for x in x_grid:
-                name = f"z{z:.0f}_x{x:.0f}_y{y:.0f}"
-                points.append((name, float(x), float(y), float(z), CAL_PHI_DEG, False))
+        if per_z_points is not None:
+            xy_list = per_z_points[z]
+        else:
+            xy_list = [(x, y) for y in y_grid for x in x_grid]
+
+        for x, y in xy_list:
+            name = f"z{z:.0f}_x{x:.0f}_y{y:.0f}"
+            points.append((name, float(x), float(y), float(z), CAL_PHI_DEG, False))
 
     for name, x, y, z, phi in REFERENCE_POSES:
         points.append((name, float(x), float(y), float(z), float(phi), True))
@@ -607,6 +791,149 @@ def save_raw_csv(rows):
         for r in rows:
             writer.writerow(asdict(r))
     print(f"[SAVE] Raw scan CSV -> {OUT_RAW_CSV.resolve()}")
+
+
+# ============================================================
+# VISIBILITY MAP + REFINED GRID
+# ============================================================
+
+def _build_refined_grid_for_z(both_xy: list[tuple[float, float]]):
+    """Given the (x,y) of points visible in BOTH cameras at one Z layer,
+    return a refined grid dict {'x': [...], 'y': [...], 'bbox': {...}} or
+    None if not enough data to refine."""
+    if len(both_xy) < REFINED_GRID_MIN_BOTH_VISIBLE_FOR_REFINE:
+        return None
+
+    xs = [p[0] for p in both_xy]
+    ys = [p[1] for p in both_xy]
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+
+    inset = float(REFINED_GRID_INSET_MM)
+    x_min += inset
+    x_max -= inset
+    y_min += inset
+    y_max -= inset
+    if x_max < x_min or y_max < y_min:
+        return None
+
+    step = max(1.0, float(REFINED_GRID_STEP_MM))
+    nx = max(REFINED_GRID_MIN_POINTS_PER_AXIS, int(round((x_max - x_min) / step)) + 1)
+    ny = max(REFINED_GRID_MIN_POINTS_PER_AXIS, int(round((y_max - y_min) / step)) + 1)
+
+    x_axis = list(np.linspace(x_min, x_max, nx))
+    y_axis = list(np.linspace(y_min, y_max, ny))
+
+    return {
+        "x": [float(round(v, 3)) for v in x_axis],
+        "y": [float(round(v, 3)) for v in y_axis],
+        "bbox": {
+            "x_min": float(x_min),
+            "x_max": float(x_max),
+            "y_min": float(y_min),
+            "y_max": float(y_max),
+        },
+        "step_mm": step,
+        "n_both_visible_used": len(both_xy),
+    }
+
+
+def save_visibility_map(rows, x_grid, y_grid, z_levels, path: Path = DYNAMIC_GRID_PATH):
+    """Write per-camera visibility map + auto-derived refined grid as JSON.
+    This file is consumed by SCAN_MODE='from_dynamic_grid' on the next run."""
+    scan_points_out = []
+    for r in rows:
+        if r.is_reference_pose:
+            continue
+        scan_points_out.append({
+            "x_cmd_mm": r.x_cmd_mm,
+            "y_cmd_mm": r.y_cmd_mm,
+            "z_cmd_mm": r.z_cmd_mm,
+            "reachable_ik": bool(r.reachable_ik),
+            "target_safe": bool(r.target_safe),
+            "path_safe": bool(r.path_safe),
+            "move_ok": bool(r.move_ok),
+            "overhead_visible": bool(r.overhead_visible),
+            "stereo_visible": bool(r.stereo_visible),
+            "both_visible": bool(r.overhead_visible and r.stereo_visible),
+            "reason": r.reason,
+        })
+
+    # Per-Z visibility lists (handy for plotting / manual editing).
+    per_z = {}
+    z_keys_sorted = sorted({round(p["z_cmd_mm"], 4) for p in scan_points_out})
+    for zk in z_keys_sorted:
+        pts_z = [p for p in scan_points_out if abs(p["z_cmd_mm"] - zk) < 1e-9]
+        per_z[f"{zk}"] = {
+            "overhead_visible_xy": [[p["x_cmd_mm"], p["y_cmd_mm"]] for p in pts_z if p["overhead_visible"]],
+            "stereo_visible_xy":   [[p["x_cmd_mm"], p["y_cmd_mm"]] for p in pts_z if p["stereo_visible"]],
+            "both_visible_xy":     [[p["x_cmd_mm"], p["y_cmd_mm"]] for p in pts_z if p["both_visible"]],
+            "overhead_missing_xy": [[p["x_cmd_mm"], p["y_cmd_mm"]] for p in pts_z if not p["overhead_visible"] and p["move_ok"]],
+            "stereo_missing_xy":   [[p["x_cmd_mm"], p["y_cmd_mm"]] for p in pts_z if not p["stereo_visible"] and p["move_ok"]],
+            "skipped_unsafe_xy":   [[p["x_cmd_mm"], p["y_cmd_mm"]] for p in pts_z if not p["move_ok"]],
+        }
+
+    # Refined grid per Z, focused on regions visible in BOTH cameras.
+    axes_per_z = {}
+    refined_notes = {}
+    for zk in z_keys_sorted:
+        both_xy = [tuple(xy) for xy in per_z[f"{zk}"]["both_visible_xy"]]
+        refined = _build_refined_grid_for_z(both_xy)
+        if refined is not None:
+            axes_per_z[f"{zk}"] = {"x": refined["x"], "y": refined["y"]}
+            refined_notes[f"{zk}"] = {
+                "source": "bbox_of_both_visible",
+                "bbox": refined["bbox"],
+                "step_mm": refined["step_mm"],
+                "n_both_visible_used": refined["n_both_visible_used"],
+                "n_x": len(refined["x"]),
+                "n_y": len(refined["y"]),
+            }
+        else:
+            # Fall back to the original grid for this Z.
+            axes_per_z[f"{zk}"] = {"x": list(x_grid), "y": list(y_grid)}
+            refined_notes[f"{zk}"] = {
+                "source": "fallback_original_grid",
+                "reason": f"only {len(both_xy)} both-visible points "
+                          f"(need >= {REFINED_GRID_MIN_BOTH_VISIBLE_FOR_REFINE})",
+            }
+
+    out = {
+        "generated_unix_time": time.time(),
+        "scan_mode_source": SCAN_MODE,
+        "original_grid": {
+            "x": list(x_grid),
+            "y": list(y_grid),
+            "z_levels": list(z_levels),
+        },
+        "stats": {
+            "n_points": len(scan_points_out),
+            "n_move_ok": sum(1 for p in scan_points_out if p["move_ok"]),
+            "n_overhead_visible": sum(1 for p in scan_points_out if p["overhead_visible"]),
+            "n_stereo_visible": sum(1 for p in scan_points_out if p["stereo_visible"]),
+            "n_both_visible": sum(1 for p in scan_points_out if p["both_visible"]),
+        },
+        "per_z_visibility": per_z,
+        "scan_points": scan_points_out,
+        "refined_grid": {
+            "step_mm": float(REFINED_GRID_STEP_MM),
+            "inset_mm": float(REFINED_GRID_INSET_MM),
+            "axes_per_z": axes_per_z,
+            "notes_per_z": refined_notes,
+            "comment": (
+                "axes_per_z[z] = {x:[...], y:[...]} defines the grid for that Z layer. "
+                "Re-run with SCAN_MODE='from_dynamic_grid' to use this."
+            ),
+        },
+    }
+
+    path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    print(f"[SAVE] Visibility map + refined grid -> {path.resolve()}")
+    s = out["stats"]
+    print(
+        f"       n_points={s['n_points']}  overhead_vis={s['n_overhead_visible']}"
+        f"  stereo_vis={s['n_stereo_visible']}  both_vis={s['n_both_visible']}"
+    )
 
 
 # ============================================================
@@ -690,22 +1017,7 @@ def build_homography_layers(rows):
 
 
 def fit_stereo_models(rows):
-    """Fit stereo-camera <-> robot affine models.
-
-    Old/legacy model:
-      [robot_x, robot_y, 1] -> [cam_x, cam_y, cam_z]
-      [cam_x, cam_y, cam_z, 1] -> [robot_x, robot_y]
-
-    New/full XYZ model:
-      [robot_x, robot_y, robot_z, 1] -> [cam_x, cam_y, cam_z]
-      [cam_x, cam_y, cam_z, 1] -> [robot_x, robot_y, robot_z]
-
-    For final visual servoing, use the inverse linear block:
-      delta_robot = A_robot_from_cam_xyz_3x4[:, :3] @ delta_cam
-
-    where:
-      delta_cam = object_cam_xyz - ee_cam_xyz
-    """
+    """Fit stereo-camera <-> robot affine models. Unchanged from prior version."""
     valid = [
         r for r in rows
         if r.move_ok
@@ -741,9 +1053,7 @@ def fit_stereo_models(rows):
         dtype=np.float64,
     ).reshape(1, 3)
 
-    # ------------------------------------------------------------------
-    # Legacy XY-only fits, kept for compatibility with existing scripts.
-    # ------------------------------------------------------------------
+    # Legacy XY-only fits.
     robot_xy1 = np.column_stack([robot_xyz[:, 0], robot_xyz[:, 1], np.ones(len(valid))])
     B_xy_T, *_ = np.linalg.lstsq(robot_xy1, cam_xyz, rcond=None)
     B_xy = B_xy_T.T
@@ -761,21 +1071,17 @@ def fit_stereo_models(rows):
     robot_xy_res = robot_xy_pred - robot_xy
     robot_xy_rmse = float(np.sqrt(np.mean(np.sum(robot_xy_res**2, axis=1))))
 
-    # ------------------------------------------------------------------
-    # Full XYZ fits. This is the important new model.
-    # ------------------------------------------------------------------
+    # Full XYZ fits.
     robot_xyz1 = np.column_stack([robot_xyz, np.ones(len(valid))])
 
-    # cam_xyz = robot_xyz1 @ B_xyz.T
     B_xyz_T, *_ = np.linalg.lstsq(robot_xyz1, cam_xyz, rcond=None)
-    B_xyz = B_xyz_T.T  # 3 x 4
+    B_xyz = B_xyz_T.T
     cam_pred_xyz = robot_xyz1 @ B_xyz_T
     cam_res_xyz = cam_pred_xyz - cam_xyz
     cam_xyz_rmse = float(np.sqrt(np.mean(np.sum(cam_res_xyz**2, axis=1))))
 
-    # robot_xyz = cam_xyz1 @ A_xyz.T
     A_xyz_T, *_ = np.linalg.lstsq(cam_xyz1, robot_xyz, rcond=None)
-    A_xyz = A_xyz_T.T  # 3 x 4
+    A_xyz = A_xyz_T.T
     robot_xyz_pred = cam_xyz1 @ A_xyz_T
     robot_xyz_res = robot_xyz_pred - robot_xyz
     robot_xyz_rmse = float(np.sqrt(np.mean(np.sum(robot_xyz_res**2, axis=1))))
@@ -833,14 +1139,11 @@ def fit_stereo_models(rows):
     report_lines.append(f"  unit axes rows [X,Y,Z] =\n{robot_axes_cam_unit}")
 
     return {
-        # Legacy compatibility:
         "stereo_valid_count": np.asarray([len(valid)], dtype=np.int32),
         "B_cam_from_robot_xy_3x3": B_xy,
         "A_robot_from_cam_xyz_2x4": A_xy,
         "stereo_cam_fit_rmse_mm": np.asarray([cam_rmse_xy], dtype=np.float64),
         "stereo_robot_fit_rmse_mm": np.asarray([robot_xy_rmse], dtype=np.float64),
-
-        # New full-XYZ model:
         "B_cam_from_robot_xyz_3x4": B_xyz,
         "A_robot_from_cam_xyz_3x4": A_xyz,
         "B_cam_from_robot_xyz_linear_3x3": B_xyz[:, :3],
@@ -1023,6 +1326,7 @@ def main():
     stereo = None
     robot = Robot(ROBOT_CONFIG, connect=True)
     rows: list[ScanRow] = []
+    running_stats = RunningCalibrationStats()
 
     try:
         require_soft_limits(robot)
@@ -1045,11 +1349,9 @@ def main():
                 print(f"[Stereo] Could not open stereo camera/logging: {exc!r}")
                 stereo = None
 
-        cv2.namedWindow(WINDOW_OVERHEAD, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(WINDOW_OVERHEAD, 960, 540)
-        if stereo is not None:
-            cv2.namedWindow(WINDOW_STEREO, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(WINDOW_STEREO, 1280, 520)
+        # Single combined window for both cameras.
+        cv2.namedWindow(WINDOW_COMBINED, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(WINDOW_COMBINED, COMBINED_WINDOW_WIDTH, 900)
 
         robot.enable(True)
         robot.init_drivers()
@@ -1082,6 +1384,7 @@ def main():
         print(f"       Robot Z={z_levels}")
         print(f"       Floor heights={[round(robot_z_to_floor_height_mm(z), 1) for z in z_levels]}")
         print(f"       Reference poses={REFERENCE_POSES}")
+        print(f"       Wait for stereo before next point: {WAIT_FOR_STEREO and stereo is not None}")
         print("\nType YES to start autonomous safety-gated grid scan.")
         ans = input("> ").strip()
         if ans != "YES":
@@ -1158,6 +1461,7 @@ def main():
                 K_overhead,
                 dist_overhead,
                 stereo_calib,
+                running_stats=running_stats,
             )
 
             if row.overhead_visible:
@@ -1173,6 +1477,30 @@ def main():
 
             if row.stereo_visible:
                 print(f"[STEREO] {name}: xyz=({row.stereo_x_mm},{row.stereo_y_mm},{row.stereo_z_mm})")
+            elif stereo is not None:
+                print(f"[NO STEREO] {name}: not enough stereo samples (continuing)")
+
+            # --- Feed running stats so the NEXT point sees an updated live RMS. ---
+            if row.overhead_visible and row.overhead_used_for_homography:
+                running_stats.add_overhead(
+                    row.z_level_mm,
+                    (row.overhead_u_used_px, row.overhead_v_used_px),
+                    (row.robot_x_mm, row.robot_y_mm),
+                )
+                oh_rms_now, oh_n_now = running_stats.current_overhead_rms(row.z_level_mm)
+                if oh_rms_now is not None:
+                    print(f"        [LIVE H z={row.z_level_mm:.0f}] n={oh_n_now}  RMS={oh_rms_now:.2f} mm")
+
+            if (row.stereo_visible
+                    and row.stereo_x_mm is not None
+                    and row.robot_x_mm is not None):
+                running_stats.add_stereo(
+                    (row.robot_x_mm, row.robot_y_mm, row.robot_z_mm),
+                    (row.stereo_x_mm, row.stereo_y_mm, row.stereo_z_mm),
+                )
+                st_rmse_now, st_n_now = running_stats.current_stereo_rmse()
+                if st_rmse_now is not None:
+                    print(f"        [LIVE STEREO] n={st_n_now}  robot<-cam RMSE={st_rmse_now:.2f} mm")
 
             rows.append(row)
             save_raw_csv(rows)
@@ -1220,13 +1548,20 @@ def main():
             report_lines,
         )
 
+        # Always write the visibility map / refined grid (used by SCAN_MODE='from_dynamic_grid').
+        save_visibility_map(rows, x_grid, y_grid, z_levels)
+
         print("\n[DONE] Calibration scan complete.")
 
     except KeyboardInterrupt:
         print("\n[ABORT] User aborted.")
         if rows:
             save_raw_csv(rows)
-            print("[ABORT] Partial CSV saved.")
+            try:
+                save_visibility_map(rows, x_grid, y_grid, z_levels)
+            except Exception as exc:
+                print(f"[ABORT] Could not save visibility map: {exc!r}")
+            print("[ABORT] Partial CSV + visibility map saved.")
     finally:
         if overhead_cap is not None:
             overhead_cap.release()

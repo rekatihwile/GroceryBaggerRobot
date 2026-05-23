@@ -97,7 +97,10 @@ XY_DISAGREEMENT_WARN_MM: float = 50.0
 # --- Pick orientation ---
 PICK_PHI_MODE: str = "triangulated_short_side"
 VALID_PICK_PHI_MODES = {
+    "centroid_longest_ray_perp",
+    "centroid_shortest_ray_parallel",
     "overhead_minor_axis",
+    "pointcloud_shortest_path",
     "triangulated_short_side",
     "mask_minor_axis_pointcloud",
     "current_fk",
@@ -189,7 +192,7 @@ from vision.torch_device import select_torch_device
 from vision.yolo_segmenter import YOLOSegmenter, YOLODetection
 from vision.raft_runner import RAFTStereoRunner
 from vision.stereo_rectifier import StereoRectifier
-from vision.pointcloud import masked_disparity_to_pointcloud
+from vision.pointcloud import estimate_mask_centroid_ray_angle_deg, masked_disparity_to_pointcloud
 from vision.object_geometry import (
     ObjectCandidate,
     build_object_candidate,
@@ -426,6 +429,45 @@ def _project_overhead_corners_to_robot_xy_mm(
     return np.vstack(projected)
 
 
+def _overhead_centroid_ray_phi(
+    det: YOLODetection,
+    z_mm: float,
+    bundle: dict,
+    *,
+    select: str,
+    perpendicular: bool,
+) -> tuple[float | None, str]:
+    image_angle, source = estimate_mask_centroid_ray_angle_deg(
+        det,
+        select=select,
+        perpendicular=perpendicular,
+    )
+    if image_angle is None:
+        return None, source
+
+    lookup_z, _ = clamp_lookup_z_to_bundle(max(0.0, float(z_mm)), bundle)
+    centroid = np.asarray(det.centroid_px, dtype=np.float64).reshape(2)
+    theta = np.deg2rad(float(image_angle))
+    axis_px = np.array([np.cos(theta), np.sin(theta)], dtype=np.float64)
+    half_len_px = max(
+        12.0,
+        0.5 * float(det.minor_axis_length_px if select == "shortest" else det.major_axis_length_px),
+    )
+
+    try:
+        xy0, *_ = map_uv_z_to_robot_xy(centroid - axis_px * half_len_px, lookup_z, bundle)
+        xy1, *_ = map_uv_z_to_robot_xy(centroid + axis_px * half_len_px, lookup_z, bundle)
+    except Exception:
+        return None, f"{source}_overhead_projection_failed"
+
+    delta = np.asarray(xy1, dtype=np.float64).reshape(2) - np.asarray(xy0, dtype=np.float64).reshape(2)
+    if not np.all(np.isfinite(delta)) or float(np.linalg.norm(delta)) < 1e-6:
+        return None, f"{source}_overhead_degenerate_robot_delta"
+
+    phi = float(np.degrees(np.arctan2(delta[1], delta[0])) % 180.0)
+    return phi, f"{source}_overhead"
+
+
 def _footprint_dims_from_robot_corners_cm(
     robot_corners_xy_mm: np.ndarray,
 ) -> tuple[tuple[float, float], tuple[float, float] | None] | None:
@@ -575,6 +617,18 @@ def _match_overhead_detections_to_candidates(
             if PICK_PHI_MODE == "overhead_minor_axis":
                 cand.pick_phi_deg = float(best_det.minor_axis_angle_deg)
                 cand.pick_phi_source = "overhead_minor_axis"
+            elif PICK_PHI_MODE in {"centroid_longest_ray_perp", "centroid_shortest_ray_parallel"}:
+                select = "longest" if PICK_PHI_MODE == "centroid_longest_ray_perp" else "shortest"
+                phi, source = _overhead_centroid_ray_phi(
+                    best_det,
+                    stereo_z,
+                    bundle,
+                    select=select,
+                    perpendicular=PICK_PHI_MODE == "centroid_longest_ray_perp",
+                )
+                if phi is not None:
+                    cand.pick_phi_deg = float(phi)
+                    cand.pick_phi_source = source
             n_matched += 1
             print(
                 f"[MATCH] cand[{cand.index}] {cand.yolo.class_name:14s} "
