@@ -120,6 +120,26 @@ indices, YOLO weights, and motion parameters.
 | `e` / `d`   | Enable / disable motors                               |
 | `q` / `ESC` | Quit                                                  |
 
+## Placement Repeatability Test
+
+Calibrate a saved placement zone with the manual workspace GUI:
+
+```powershell
+python scripts/manual_control/calibrate_place_zone.py
+```
+
+Run a single-object pick and place into that saved zone:
+
+```powershell
+python scripts/pick_one_place_one.py
+```
+
+No-hardware smoke check for placement-zone JSON IO:
+
+```powershell
+python scripts/smoke_tests/smoke_place_zone_io.py
+```
+
 ## Vision Debug Scripts
 
 Live-camera interactive debug and validation tools.  

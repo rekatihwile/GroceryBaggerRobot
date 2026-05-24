@@ -6,7 +6,7 @@
     {
       "name": "overhead_frame_bar",
       "xmin": -800.0,
-      "xmax": 210.0,
+      "xmax": 75.0,
       "ymin": 200.0,
       "ymax": 630.0,
       "z_min": 115.0,

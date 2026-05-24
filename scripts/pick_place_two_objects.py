@@ -1,0 +1,647 @@
+from __future__ import annotations
+
+"""Simple two-object adjacent placement demo (not full bagging)."""
+
+# ============================================================
+# USER SETTINGS
+# ============================================================
+
+from pathlib import Path
+
+PAD_X_MM = 10.0
+PAD_Y_MM = 10.0
+PAD_Z_MM = 0.0
+ADJACENT_DIRECTION = "left"
+MATCH_SECOND_OBJECT_CLASS = True
+TARGET_OBJECT_COUNT = 2
+AUTO_TARGET_COUNT_FROM_REFS = True
+
+# IMPORTANT:
+# True means placement descends to:
+#   surface_z + estimated_object_height + release_gap + small_uncertainty
+# False used to mean "descend to raw surface_z", which can crush objects.
+USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT = False
+PLACE_RELEASE_GAP_MM = 2.0
+PLACE_Z_UNCERTAINTY_GAIN = 0.1
+PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 3.0
+
+# Pickup can still use the full open angle imported from pick_one_place_one.
+# Placement should only crack the claw open so it does not hit the object already placed.
+PLACE_CLAW_OPEN_DEG = 45
+COARSE_MOVE_TIME_S = 1.10
+XY_MOVE_TIME_S = 1.50
+PLACE_Z_MOVE_TIME_S = 0.60
+PLACE_RELEASE_DWELL_S = 0.3
+
+# When True, skip all YES confirmations for hands-off execution.
+AUTONOMOUS_MODE = True
+
+# ============================================================
+
+import sys
+import time
+import traceback
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import Callable
+
+import cv2
+import numpy as np
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from motion.place_z_policy import compute_place_z_plan
+from planning.aabb_utils import aabb_from_object_candidate, make_aabb_from_center_size, pad_aabb
+from planning.adjacent_placement import compute_adjacent_placement
+from scripts.pick_one_place_one import (
+    BUNDLE_PATH,
+    STEREO_CALIBRATION_PATH,
+    USE_CUDA,
+    USE_HALF,
+    OVERHEAD_INDEX,
+    STEREO_INDEX,
+    WINDOW,
+    COMBINED_WIDTH_PX,
+    OVERHEAD_DRAW_H_PX,
+    STEREO_DRAW_H_PX,
+    STATUS_H_PX,
+    CLAW_OPEN_DEG,
+    CLAW_CLOSED_DEG,
+    CLAW_SETTLE_S,
+    Z_MAX_MM,
+    _configure_modules,
+    _check_robot_pose_safe,
+    _confirm,
+    _load_place_surface_zone,
+    _move_checked,
+    execute_pick_selected,
+)
+from scripts.pick_validation_display import _hr, make_display, print_validation
+from vision.pick_candidate_builder import CandidateDebug, SurveyState
+from vision.pick_survey_pipeline import load_vision, run_survey
+from vision.pick_z_resolver import validate_z_command
+from vision.stereo_rectifier import StereoRectifier
+from vision.torch_device import select_torch_device
+from hardware.cameras.overhead_camera import SimpleOverheadCamera
+from hardware.cameras.stereo_apriltag_viewer import SimpleStereoCamera, build_detector
+from motion.pick_validation_motion import startup_robot
+from test_calibration_bundle_live_stereo_z_pickplace import (
+    load_bundle,
+    load_stereo_calibration,
+    print_matrix_labeled,
+    read_command_key,
+)
+
+
+def _resolve_held_object_height_and_uncertainty(held_object: CandidateDebug | None) -> tuple[float, float, list[str]]:
+    if held_object is None:
+        return 0.0, 0.0, ["no_held_object"]
+
+    warnings: list[str] = []
+    c = held_object.candidate
+    z_debug = getattr(c, "z_debug", None)
+
+    if z_debug is not None:
+        return (
+            max(0.0, float(z_debug.object_height_mm)),
+            max(0.0, float(z_debug.uncertainty_clearance_mm)),
+            list(getattr(z_debug, "warnings", []) or []),
+        )
+
+    h_cm = getattr(c, "pointcloud_height_cm", None)
+    if h_cm is not None and np.isfinite(float(h_cm)):
+        warnings.append("using_pointcloud_height_cm_fallback")
+        return max(0.0, float(h_cm) * 10.0), 0.0, warnings
+
+    warnings.append("no_object_height_available")
+    return 0.0, 0.0, warnings
+
+
+def _execute_place_at_target(
+    robot,
+    held_object: CandidateDebug,
+    *,
+    target_xy_mm: np.ndarray,
+    target_phi_deg: float,
+    destination_surface_z_mm: float,
+    forced_place_z_mm: float | None = None,
+    on_start_place_motion: Callable[[], None] | None = None,
+) -> bool:
+    object_height_mm, object_uncertainty_clearance_mm, object_warnings = _resolve_held_object_height_and_uncertainty(held_object)
+    place_plan = compute_place_z_plan(
+        destination_surface_z_mm=destination_surface_z_mm,
+        object_height_mm=object_height_mm,
+        z_max_mm=Z_MAX_MM,
+        release_gap_mm=PLACE_RELEASE_GAP_MM,
+        object_uncertainty_clearance_mm=object_uncertainty_clearance_mm,
+        place_uncertainty_gain=PLACE_Z_UNCERTAINTY_GAIN,
+        place_uncertainty_clearance_max_mm=PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM,
+    )
+
+    if forced_place_z_mm is not None:
+        place_z = float(np.clip(float(forced_place_z_mm), 0.0, Z_MAX_MM))
+        place_source = "forced_stack_z"
+        print(f"[PLACE2 STACK] forced_place_z_mm={float(forced_place_z_mm):.3f}")
+    elif USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT:
+        place_z = float(place_plan.final_release_z_mm)
+        place_source = "dynamic_surface_plus_object_height"
+    else:
+        # Safety fallback: never descend all the way to raw surface_z while holding an object.
+        # The previous behavior used destination_surface_z_mm directly, which can crush the item
+        # and overload the prismatic joint. If dynamic mode is disabled, still keep at least the
+        # estimated object height plus release gap above the destination surface.
+        place_z = float(destination_surface_z_mm + max(0.0, object_height_mm) + PLACE_RELEASE_GAP_MM)
+        place_z = float(np.clip(place_z, 0.0, Z_MAX_MM))
+        place_source = "safe_fixed_surface_plus_object_height"
+        print("[PLACE2 WARN] dynamic place Z disabled; using surface + object_height + release_gap safety fallback.")
+
+    x = float(target_xy_mm[0])
+    y = float(target_xy_mm[1])
+    phi = float(target_phi_deg)
+    travel_z = float(place_plan.approach_z_mm)
+
+    for label, z in (("travel", travel_z), ("place", place_z), ("retract", float(place_plan.retract_z_mm))):
+        reason = validate_z_command(z, f"[PLACE2] {label}")
+        if reason:
+            print(f"[PLACE2] ABORT: {reason}")
+            return False
+
+    if not _check_robot_pose_safe(robot, x, y, travel_z, "[PLACE2] approach"):
+        return False
+    if not _check_robot_pose_safe(robot, x, y, place_z, "[PLACE2] lower"):
+        return False
+
+    print("[PLACE2 Z PLAN]")
+    print(f"destination_surface_z_mm = {destination_surface_z_mm:.3f}")
+    print(f"object_height_mm = {object_height_mm:.3f}")
+    print(f"release_gap_mm = {PLACE_RELEASE_GAP_MM:.3f}")
+    print(f"object_uncertainty_clearance_mm = {object_uncertainty_clearance_mm:.3f}")
+    print(f"place_uncertainty_gain = {PLACE_Z_UNCERTAINTY_GAIN:.3f}")
+    print(f"place_uncertainty_clearance_mm = {place_plan.place_uncertainty_clearance_mm:.3f}")
+    print(f"final_release_z_mm = {place_plan.final_release_z_mm:.3f}")
+    print(f"approach/retract_z_mm = {place_plan.approach_z_mm:.3f}/{place_plan.retract_z_mm:.3f}")
+    print(f"warnings = {place_plan.warnings + object_warnings}")
+    print(f"target_xy_mm = ({x:.1f}, {y:.1f}) target_phi_deg = {phi:.1f} source = {place_source}")
+    print(f"place_claw_open_deg = {PLACE_CLAW_OPEN_DEG}")
+
+    require_confirmation = not bool(AUTONOMOUS_MODE)
+    if not _confirm("[PLACE2] Real place motion will move to computed adjacent target and open claw.", require_confirmation):
+        print("[PLACE2] canceled by user")
+        return False
+
+    if on_start_place_motion is not None:
+        print("[PLACE2] starting background prefetch survey while robot is moving")
+        try:
+            on_start_place_motion()
+        except Exception as exc:
+            print(f"[PLACE2 WARN] background prefetch start failed: {exc}")
+
+    if not _move_checked(robot, "[PLACE2] raise", z_mm=travel_z, move_time_s=COARSE_MOVE_TIME_S):
+        return False
+    if not _move_checked(robot, "[PLACE2] XY+phi", x_mm=x, y_mm=y, z_mm=travel_z, phi_deg=phi, move_time_s=XY_MOVE_TIME_S):
+        return False
+
+    if not _move_checked(robot, "[PLACE2] descend", z_mm=place_z, move_time_s=PLACE_Z_MOVE_TIME_S):
+        return False
+
+    print(f"[PLACE2] opening claw servo={PLACE_CLAW_OPEN_DEG} (partial release)")
+    robot.servo(PLACE_CLAW_OPEN_DEG)
+    time.sleep(float(PLACE_RELEASE_DWELL_S))
+
+    if not _move_checked(robot, "[PLACE2] retract", z_mm=float(place_plan.retract_z_mm), move_time_s=COARSE_MOVE_TIME_S):
+        return False
+
+    print("[PLACE2] OK")
+    return True
+
+
+def _placed_occupancy_from_plan(center_xyz_mm: np.ndarray, size_xyz_mm: np.ndarray, label: str):
+    raw = make_aabb_from_center_size(center_xyz_mm=center_xyz_mm, size_xyz_mm=size_xyz_mm, label=label)
+    return pad_aabb(raw, PAD_X_MM, PAD_Y_MM, PAD_Z_MM)
+
+
+def _reset_runtime_state() -> tuple[list, SurveyState | None, CandidateDebug | None]:
+    print("[RESET] clearing survey state, held object state, and placed occupancy list")
+    return [], None, None
+
+
+def _select_closest_candidate_to_reference(
+    candidates: list[CandidateDebug],
+    ref_dbg: CandidateDebug,
+    *,
+    require_same_class: bool,
+) -> CandidateDebug | None:
+    if not candidates:
+        return None
+
+    ref_xy = np.asarray(ref_dbg.candidate.target_xy, dtype=np.float64).reshape(2)
+    ref_cls = str(ref_dbg.candidate.yolo.class_name)
+
+    pool = candidates
+    if require_same_class:
+        same_cls = [c for c in candidates if str(c.candidate.yolo.class_name) == ref_cls]
+        if same_cls:
+            pool = same_cls
+            print(f"[SELECT2] class match enabled: using {len(pool)} candidates with class={ref_cls}")
+        else:
+            print(f"[SELECT2 WARN] no same-class candidates for class={ref_cls}; falling back to all classes")
+
+    best = None
+    best_dist = float("inf")
+    for cand in pool:
+        xy = np.asarray(cand.candidate.target_xy, dtype=np.float64).reshape(2)
+        d = float(np.linalg.norm(xy - ref_xy))
+        if d < best_dist:
+            best_dist = d
+            best = cand
+
+    if best is not None:
+        print(
+            "[SELECT2] nearest candidate selected "
+            f"class={best.candidate.yolo.class_name} "
+            f"distance_mm={best_dist:.1f} "
+            f"ref_xy=({ref_xy[0]:.1f},{ref_xy[1]:.1f}) "
+            f"cand_xy=({best.candidate.target_xy[0]:.1f},{best.candidate.target_xy[1]:.1f})"
+        )
+    return best
+
+
+def main() -> int:
+    _configure_modules()
+    _hr("PICK PLACE TWO OBJECTS - ADJACENT DEMO", "=")
+    print("[MAIN] Not full bagging: this demo places object2 adjacent to object1 only.")
+    print(f"[MAIN] direction={ADJACENT_DIRECTION} padding=({PAD_X_MM},{PAD_Y_MM},{PAD_Z_MM}) mm")
+    print(f"[MAIN] target_object_count={TARGET_OBJECT_COUNT}")
+    print(f"[MAIN] auto_target_count_from_refs={AUTO_TARGET_COUNT_FROM_REFS}")
+    print(f"[MAIN] autonomous_mode={AUTONOMOUS_MODE}")
+    print("[MAIN] controls: s=survey, r=rotate, 1..9=set ref slot, c=set next ref slot, l=list refs, v=validate dump, a=run N-object flow, x=reset state, q=quit")
+
+    device_info = select_torch_device(use_cuda=USE_CUDA, use_half=USE_HALF)
+    bundle = load_bundle(BUNDLE_PATH)
+    stereo_calib = load_stereo_calibration(STEREO_CALIBRATION_PATH)
+    detector = build_detector()
+    print_matrix_labeled(
+        "A_robot_from_cam_xyz_3x4",
+        bundle.get("A_robot_from_cam_xyz_3x4"),
+        ["robot_x", "robot_y", "robot_z"],
+        ["cam_x", "cam_y", "cam_z", "1"],
+    )
+
+    yolo, raft = load_vision(device_info)
+    rectifier = StereoRectifier(stereo_calib)
+    overhead = SimpleOverheadCamera(OVERHEAD_INDEX)
+    stereo = SimpleStereoCamera(STEREO_INDEX)
+    robot = startup_robot()
+
+    surface_zone = _load_place_surface_zone()
+    surface_z = float(surface_zone["surface_z_mm"])
+    base_xy = np.asarray(surface_zone["center_xy_mm"], dtype=np.float64).reshape(2)
+    place_phi = float(surface_zone["default_phi_deg"])
+
+    placed_boxes: list = []
+    state: SurveyState | None = None
+    held: CandidateDebug | None = None
+    if AUTO_TARGET_COUNT_FROM_REFS:
+        object_refs: list[CandidateDebug | None] = []
+    else:
+        object_refs = [None for _ in range(int(max(1, TARGET_OBJECT_COUNT)))]
+    survey_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="survey_prefetch")
+    prefetched_future: Future | None = None
+
+    cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WINDOW, COMBINED_WIDTH_PX, OVERHEAD_DRAW_H_PX + STEREO_DRAW_H_PX + STATUS_H_PX)
+
+    try:
+        while True:
+            ok_oh, live_overhead = overhead.read()
+            if not ok_oh:
+                live_overhead = None
+            ok_st, _full, live_left, live_right = stereo.read_pair()
+            if not ok_st:
+                live_left = None
+                live_right = None
+            cv2.imshow(WINDOW, make_display(state, live_overhead, live_left, live_right))
+
+            key = read_command_key(delay_ms=1)
+            if key is None:
+                continue
+            if key in ("q", "escape", "\x1b"):
+                print("[MAIN] quit requested")
+                break
+
+            if key == "s":
+                state = run_survey(overhead, stereo, detector, stereo_calib, rectifier, yolo, raft, robot, bundle)
+                if state.candidates:
+                    state.selected_index = 0
+                    print("[SURVEY] selected candidate 1")
+                else:
+                    print("[SURVEY] no candidates")
+                continue
+            if key == "n":
+                robot.send("HOMEJ3")
+            if key == "g":
+                robot.move_cartesian(200,200,100,0, move_time_s=2.0)
+
+            if key == "x":
+                placed_boxes, state, held = _reset_runtime_state()
+                if AUTO_TARGET_COUNT_FROM_REFS:
+                    object_refs = []
+                else:
+                    object_refs = [None for _ in range(int(max(1, TARGET_OBJECT_COUNT)))]
+                continue
+
+
+            if key == "r":
+                if state is None or not state.candidates:
+                    print("[ROTATE] no candidates")
+                else:
+                    state.selected_index = (state.selected_index + 1) % len(state.candidates)
+                    dbg = state.candidates[state.selected_index]
+                    print(f"[ROTATE] selected [{state.selected_index + 1}/{len(state.candidates)}] {dbg.candidate.yolo.class_name}")
+                continue
+
+            if key == "l":
+                print("[REFS] current reference slots")
+                for idx, ref in enumerate(object_refs, start=1):
+                    if ref is None:
+                        print(f"  {idx}: <unset>")
+                    else:
+                        c = ref.candidate
+                        print(f"  {idx}: {c.yolo.class_name} xy=({c.target_xy[0]:.1f},{c.target_xy[1]:.1f})")
+                continue
+
+            if key == "c":
+                if state is None or not state.candidates:
+                    print("[SET] no candidates; press s first")
+                    continue
+                next_slot = None
+                for i_slot, ref in enumerate(object_refs):
+                    if ref is None:
+                        next_slot = i_slot
+                        break
+                if next_slot is None:
+                    if AUTO_TARGET_COUNT_FROM_REFS:
+                        object_refs.append(None)
+                        next_slot = len(object_refs) - 1
+                    else:
+                        print("[SET] all reference slots already filled")
+                        continue
+                object_refs[next_slot] = state.candidates[state.selected_index]
+                c = object_refs[next_slot].candidate
+                print(
+                    f"[SET] object{next_slot + 1} reference = {c.yolo.class_name} "
+                    f"xy=({c.target_xy[0]:.1f},{c.target_xy[1]:.1f})"
+                )
+                continue
+
+            if key.isdigit() and key != "0":
+                slot = int(key) - 1
+                if slot >= len(object_refs):
+                    if AUTO_TARGET_COUNT_FROM_REFS:
+                        object_refs.extend([None for _ in range(slot + 1 - len(object_refs))])
+                    else:
+                        print(f"[SET] slot {slot + 1} out of range; TARGET_OBJECT_COUNT={len(object_refs)}")
+                        continue
+                if state is None or not state.candidates:
+                    print("[SET] no candidates; press s first")
+                    continue
+                object_refs[slot] = state.candidates[state.selected_index]
+                c = object_refs[slot].candidate
+                print(
+                    f"[SET] object{slot + 1} reference = {c.yolo.class_name} "
+                    f"xy=({c.target_xy[0]:.1f},{c.target_xy[1]:.1f})"
+                )
+                continue
+
+            if key == "v":
+                print_validation(state, 0 if state is None else state.selected_index)
+                continue
+
+            if key != "a":
+                continue
+
+            if AUTO_TARGET_COUNT_FROM_REFS:
+                target_count = int(sum(1 for r in object_refs if r is not None))
+                if target_count <= 0:
+                    print("[FLOW] no references assigned. Use c or number keys after survey.")
+                    continue
+                if any(ref is None for ref in object_refs[:target_count]):
+                    print("[FLOW] references must be contiguous from slot 1..N in auto mode")
+                    continue
+            else:
+                if any(ref is None for ref in object_refs):
+                    print("[FLOW] set references for all slots 1..N before running (use c or number keys)")
+                    continue
+                target_count = int(max(1, TARGET_OBJECT_COUNT))
+            placed_boxes = []
+            held = None
+            column_xy_primary: np.ndarray | None = None
+            column_xy_secondary: np.ndarray | None = None
+
+            def _prefetch_next_survey_async() -> None:
+                nonlocal prefetched_future
+                if prefetched_future is not None and not prefetched_future.done():
+                    return
+                prefetched_future = survey_executor.submit(
+                    run_survey,
+                    overhead,
+                    stereo,
+                    detector,
+                    stereo_calib,
+                    rectifier,
+                    yolo,
+                    raft,
+                    robot,
+                    bundle,
+                )
+                print("[PREFETCH] async survey submitted")
+
+            run_ok = True
+            for i in range(1, target_count + 1):
+                print(f"[FLOW] Object {i}/{target_count}")
+                ref_dbg = object_refs[i - 1]
+                if ref_dbg is None:
+                    print(f"[FLOW] object {i} reference is unset")
+                    run_ok = False
+                    break
+
+                if i == 1:
+                    cand_dbg = ref_dbg
+                else:
+                    state = None
+                    if prefetched_future is not None:
+                        if not prefetched_future.done():
+                            print(f"[FLOW] waiting for async prefetched survey for object {i}")
+                        try:
+                            state = prefetched_future.result()
+                            print(f"[FLOW] using prefetched survey for object {i}")
+                        except Exception as exc:
+                            print(f"[FLOW WARN] async prefetch survey failed: {exc}")
+                        finally:
+                            prefetched_future = None
+
+                    if state is None:
+                        state = run_survey(overhead, stereo, detector, stereo_calib, rectifier, yolo, raft, robot, bundle)
+
+                    if not state.candidates:
+                        print(f"[FLOW] no candidates available for object {i}")
+                        run_ok = False
+                        break
+
+                    cand_dbg = _select_closest_candidate_to_reference(
+                        state.candidates,
+                        ref_dbg,
+                        require_same_class=MATCH_SECOND_OBJECT_CLASS,
+                    )
+                    if cand_dbg is None:
+                        print(f"[FLOW] unable to choose candidate for object {i}")
+                        run_ok = False
+                        break
+                    state.selected_index = state.candidates.index(cand_dbg)
+
+                if not execute_pick_selected(robot, cand_dbg, bundle=bundle):
+                    print(f"[FLOW] object {i} pick failed")
+                    run_ok = False
+                    break
+                held = cand_dbg
+
+                raw_box = aabb_from_object_candidate(cand_dbg.candidate, default_label=f"object{i}")
+                object_height_mm = float(raw_box.size_xyz_mm[2])
+
+                next_prefetch_cb = _prefetch_next_survey_async if i < target_count else None
+                destination_surface_for_call = float(surface_z)
+                forced_place_z = None
+                below_top_z_mm: float | None = None
+
+                if i == 1:
+                    target_xy = base_xy
+                    target_phi = place_phi
+                    column_xy_primary = np.asarray(target_xy, dtype=np.float64).reshape(2)
+                elif i == 2:
+                    moving_padded = pad_aabb(raw_box, PAD_X_MM, PAD_Y_MM, PAD_Z_MM)
+                    plan = compute_adjacent_placement(
+                        reference_padded_box=placed_boxes[-1],
+                        moving_padded_box=moving_padded,
+                        direction=ADJACENT_DIRECTION,
+                        surface_z_mm=surface_z,
+                        place_phi_deg=place_phi,
+                    )
+                    print(f"[FLOW] object{i} adjacent target xyz = {plan.target_center_xyz_mm.tolist()}")
+                    target_xy = plan.target_center_xy_mm
+                    target_phi = plan.target_phi_deg
+                    column_xy_secondary = np.asarray(target_xy, dtype=np.float64).reshape(2)
+                else:
+                    # 2-per-layer stacking: object i is placed above object i-2.
+                    # Odd indices stay in object1 column, even indices in object2 column.
+                    if column_xy_primary is None or column_xy_secondary is None:
+                        print(f"[FLOW] missing column XY anchors for object {i}")
+                        run_ok = False
+                        break
+
+                    below_idx = i - 2
+                    below_box = placed_boxes[below_idx - 1]
+                    below_top_z_mm = float(below_box.raw_box.max_xyz_mm[2])
+
+                    if i % 2 == 1:
+                        target_xy = column_xy_primary
+                    else:
+                        target_xy = column_xy_secondary
+                    target_phi = place_phi
+                    destination_surface_for_call = float(below_top_z_mm)
+                    forced_place_z = float(below_top_z_mm + PLACE_RELEASE_GAP_MM)
+                    print(
+                        f"[FLOW] object{i} stacking target (2-per-layer): "
+                        f"xy=({target_xy[0]:.1f},{target_xy[1]:.1f}) "
+                        f"below_object={below_idx} below_top_z_mm={below_top_z_mm:.1f} "
+                        f"forced_place_z_mm={forced_place_z:.1f}"
+                    )
+
+                if not _execute_place_at_target(
+                    robot,
+                    held,
+                    target_xy_mm=target_xy,
+                    target_phi_deg=target_phi,
+                    destination_surface_z_mm=destination_surface_for_call,
+                    forced_place_z_mm=forced_place_z,
+                    on_start_place_motion=next_prefetch_cb,
+                ):
+                    print(f"[FLOW] object {i} place failed")
+                    held = None
+                    run_ok = False
+                    break
+
+                if i == 1:
+                    placed = _placed_occupancy_from_plan(
+                        center_xyz_mm=np.array([base_xy[0], base_xy[1], surface_z + 0.5 * object_height_mm], dtype=np.float64),
+                        size_xyz_mm=raw_box.size_xyz_mm,
+                        label="object1_placed",
+                    )
+                    placed_boxes.append(placed)
+                elif i == 2:
+                    placed = _placed_occupancy_from_plan(
+                        center_xyz_mm=np.array([
+                            float(plan.target_center_xy_mm[0]),
+                            float(plan.target_center_xy_mm[1]),
+                            surface_z + 0.5 * object_height_mm,
+                        ], dtype=np.float64),
+                        size_xyz_mm=raw_box.size_xyz_mm,
+                        label="object2_placed",
+                    )
+                    placed_boxes.append(placed)
+                else:
+                    if below_top_z_mm is None:
+                        print(f"[FLOW] missing below_top_z_mm for object {i}")
+                        run_ok = False
+                        break
+                    stack_center_z = below_top_z_mm + 0.5 * object_height_mm
+                    placed = _placed_occupancy_from_plan(
+                        center_xyz_mm=np.array([float(target_xy[0]), float(target_xy[1]), stack_center_z], dtype=np.float64),
+                        size_xyz_mm=raw_box.size_xyz_mm,
+                        label=f"object{i}_stacked",
+                    )
+                    placed_boxes.append(placed)
+
+                held = None
+                print(f"[FLOW] placed_boxes count = {len(placed_boxes)}")
+
+            if run_ok:
+                print(f"[FLOW] success: placed {len(placed_boxes)} objects")
+
+    finally:
+        try:
+            if prefetched_future is not None and not prefetched_future.done():
+                prefetched_future.cancel()
+        except Exception:
+            pass
+        try:
+            survey_executor.shutdown(wait=False)
+        except Exception:
+            pass
+        try:
+            overhead.release()
+        except Exception:
+            pass
+        try:
+            stereo.release()
+        except Exception:
+            pass
+        if robot is not None:
+            try:
+                robot.close()
+            except Exception:
+                pass
+        cv2.destroyAllWindows()
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        print("\n[MAIN] interrupted by user")
+        cv2.destroyAllWindows()
+    except Exception:
+        traceback.print_exc()
+        cv2.destroyAllWindows()
+        raise

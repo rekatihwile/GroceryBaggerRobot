@@ -113,6 +113,22 @@ def main() -> int:
     if not ok:
         failures += 1
 
+    ok, _ = _try_import(
+        "planning.aabb_utils.AxisAlignedBox3D",
+        lambda: __import__("planning.aabb_utils", fromlist=["AxisAlignedBox3D"]).AxisAlignedBox3D,
+    )
+    if not ok:
+        failures += 1
+
+    ok, _ = _try_import(
+        "planning.adjacent_placement.compute_adjacent_placement",
+        lambda: __import__(
+            "planning.adjacent_placement", fromlist=["compute_adjacent_placement"]
+        ).compute_adjacent_placement,
+    )
+    if not ok:
+        failures += 1
+
     # ---- vision (no model loading, just module-level definitions) ----
     ok, _ = _try_import(
         "vision.torch_device.TorchDeviceInfo",
@@ -195,8 +211,54 @@ def main() -> int:
     if not ok:
         failures += 1
 
+    # ---- new placement/policy modules ----
+    ok, _ = _try_import(
+        "config.surface_zone_io.load_surface_zones",
+        lambda: __import__(
+            "config.surface_zone_io", fromlist=["load_surface_zones"]
+        ).load_surface_zones,
+    )
+    if not ok:
+        failures += 1
+
+    ok, _ = _try_import(
+        "motion.pick_z_policy.compute_pick_z_plan",
+        lambda: __import__(
+            "motion.pick_z_policy", fromlist=["compute_pick_z_plan"]
+        ).compute_pick_z_plan,
+    )
+    if not ok:
+        failures += 1
+
+    ok, _ = _try_import(
+        "motion.place_z_policy.compute_place_z_plan",
+        lambda: __import__(
+            "motion.place_z_policy", fromlist=["compute_place_z_plan"]
+        ).compute_place_z_plan,
+    )
+    if not ok:
+        failures += 1
+
+    ok, _ = _try_import(
+        "vision.grasp_xy_policy.compute_grasp_xy_with_local_height",
+        lambda: __import__(
+            "vision.grasp_xy_policy", fromlist=["compute_grasp_xy_with_local_height"]
+        ).compute_grasp_xy_with_local_height,
+    )
+    if not ok:
+        failures += 1
+
+    ok, _ = _try_import(
+        "motion.grasp_current_policy.GraspCurrentSettings",
+        lambda: __import__(
+            "motion.grasp_current_policy", fromlist=["GraspCurrentSettings"]
+        ).GraspCurrentSettings,
+    )
+    if not ok:
+        failures += 1
+
     print()
-    total = 17  # update if you add more imports above
+    total = 24
     passed = total - failures
     print(f"Result: {passed}/{total} imports OK, {failures} failed.")
 

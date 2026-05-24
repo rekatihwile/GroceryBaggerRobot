@@ -196,13 +196,13 @@ const float J2_COMP_PER_J1_STEP_DURING_J1_HOME = -1.0;
 // allowed limits for MOVESYNC. Tune these in one place.
 
 const float J1_NORMAL_MAX_SPEED = 25000.0;
-const float J1_NORMAL_ACCEL = 4000.0;
+const float J1_NORMAL_ACCEL = 9000.0;
 
 const float J2_NORMAL_MAX_SPEED = 25000.0;
-const float J2_NORMAL_ACCEL = 4000.0;
+const float J2_NORMAL_ACCEL = 9000.0;
 
 const float J3_NORMAL_MAX_SPEED = 12000.0;
-const float J3_NORMAL_ACCEL = 6000.0;
+const float J3_NORMAL_ACCEL = 9000.0;
 
 const float J4_NORMAL_MAX_SPEED = 40000.0;
 const float J4_NORMAL_ACCEL = 20000.0;
