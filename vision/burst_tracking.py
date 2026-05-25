@@ -13,7 +13,7 @@ from test_calibration_bundle_live_stereo_z_pickplace import read_stereo_tags_onc
 from vision.yolo_segmenter import YOLODetection, YOLOSegmenter
 
 
-BURST_COUNT: int = 16
+BURST_COUNT: int = 8
 MIN_BURST_HITS: int = 3
 BURST_FRAME_DELAY_S: float = 0.05
 BURST_CLUSTER_MAX_CENTROID_PX: float = 75.0
