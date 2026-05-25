@@ -163,6 +163,15 @@ class GroceryItem:
     # Optional raw source / debug data
     source_candidate: Any | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    grip_phi_deg: float | None = None
+    grip_phi_source: str | None = None
+    measured_grip_width_mm: float | None = None
+    grip_width_source: str | None = None
+    initial_servo_angle_deg: float | None = None
+    dynamic_lower_start_z_mm: float | None = None
+    dynamic_grip_start_angle_deg: float | None = None
+    servo_empirical_deg: float | None = None
+    z_empirical_mm: float | None = None
 
     # ------------------------------------------------------------------ #
     # Factory
@@ -277,9 +286,21 @@ class GroceryItem:
             "topdown_oriented_rect_cm": _pair_from_value(
                 getattr(candidate, "topdown_oriented_rect_cm", None)
             ),
+            "pointcloud_footprint_cm": _pair_from_value(
+                getattr(candidate, "pointcloud_footprint_cm", None)
+            ),
             "topdown_bbox_robot_xy_mm": _corners_as_tuples(
                 getattr(candidate, "topdown_bbox_robot_xy_mm", None)
             ),
+            "pick_phi_deg": _finite_float(getattr(candidate, "pick_phi_deg", None)),
+            "pick_phi_source": getattr(candidate, "pick_phi_source", None),
+            "measured_grip_width_mm": _finite_float(getattr(candidate, "measured_grip_width_mm", None)),
+            "grip_width_source": getattr(candidate, "grip_width_source", None),
+            "initial_servo_angle_deg": _finite_float(getattr(candidate, "initial_servo_angle_deg", None)),
+            "dynamic_lower_start_z_mm": _finite_float(getattr(candidate, "dynamic_lower_start_z_mm", None)),
+            "dynamic_grip_start_angle_deg": _finite_float(getattr(candidate, "dynamic_grip_start_angle_deg", None)),
+            "servo_empirical_deg": _finite_float(getattr(candidate, "servo_empirical_deg", None)),
+            "z_empirical_mm": _finite_float(getattr(candidate, "z_empirical_mm", None)),
         }
 
         return cls(
@@ -297,4 +318,13 @@ class GroceryItem:
             padded_box_xyz_cm=padded_box_xyz_cm,
             source_candidate=candidate,
             metadata=metadata,
+            grip_phi_deg=_finite_float(getattr(candidate, "pick_phi_deg", None)),
+            grip_phi_source=getattr(candidate, "pick_phi_source", None),
+            measured_grip_width_mm=_finite_float(getattr(candidate, "measured_grip_width_mm", None)),
+            grip_width_source=getattr(candidate, "grip_width_source", None),
+            initial_servo_angle_deg=_finite_float(getattr(candidate, "initial_servo_angle_deg", None)),
+            dynamic_lower_start_z_mm=_finite_float(getattr(candidate, "dynamic_lower_start_z_mm", None)),
+            dynamic_grip_start_angle_deg=_finite_float(getattr(candidate, "dynamic_grip_start_angle_deg", None)),
+            servo_empirical_deg=_finite_float(getattr(candidate, "servo_empirical_deg", None)),
+            z_empirical_mm=_finite_float(getattr(candidate, "z_empirical_mm", None)),
         )

@@ -18,6 +18,9 @@
     //    dynamicgrip(angle_start=<deg>, percent_rise=<pct>)
     //                                         Slow close until current avg > trigger.
     //                                         Stores final angle in servo_empirical.
+    //    DLR <robot_z_mm> <deriv_thresh> <N_steps> [<servo_deg> [<signed_0_1>]]
+    //                                         Dynamic lower using the same robot/J3
+    //                                         height frame used by Python FK/move commands.
     //    DL / DG                              Aliases with positional args, e.g.
     //                                           DL 150 5
     //                                           DG 50 10
@@ -170,7 +173,7 @@
 
     // Dynamic grip: how much the servo closes per current sample (deg).
     // At 100 Hz sampling, 0.05 deg/sample = 5 deg/sec.
-    const float DYN_GRIP_DEG_PER_SAMPLE = 1.0f;
+    const float DYN_GRIP_DEG_PER_SAMPLE = 0.05f;
     const float DYN_GRIP_MIN_ANGLE_DEG  = 5.0f;     // safety floor before full close
     const unsigned long DYN_GRIP_TIMEOUT_MS = 20000;
 
@@ -198,6 +201,8 @@
     float dyn_grip_open_offset_deg         = 5.0f;
     float dyn_grip_deg_per_sample_runtime  = 1.0f;
     float dyn_lower_speed_mm_s_runtime     = 50.0f;
+    bool  dyn_grip_object_squishable       = false;
+    float dyn_grip_post_contact_extra_close_deg = 0.0f;
 
     // Secondary pattern gate tuning.
     float dyn_deriv_nonzero_eps_ma         = 1.0f;    // |dI| <= eps treated as zero/noise
@@ -796,6 +801,14 @@
         return contact_mm + dyn_z_servo_l_preset_mm * cos(angle_rad);
     }
 
+    float robotZToDynamicLowerMm(float robot_z_mm)
+    {
+        // Python and the firmware should use the same J3-mm height convention:
+        // larger mm = higher, 0 mm = mechanical bottom. Python handles the
+        // firmware's non-zero post-HOME step count via its home_steps_j3 config.
+        return robot_z_mm;
+    }
+
     bool moveJ3ToMmBlocking(float mm)
     {
         enableMotors(true);
@@ -1135,10 +1148,24 @@
                 else                   Serial.println("non-zero derivative pattern gate");
                 Serial.print("# CONTACT detected at angle = ");
                 Serial.print(angle, 2); Serial.println(" deg");
-                servo_empirical_deg = angle;
+                float final_angle = angle;
+                if (dyn_grip_object_squishable && dyn_grip_post_contact_extra_close_deg > 0.0f)
+                {
+                    final_angle = max((float)SERVO_ANGLE_MIN_DEG, angle - dyn_grip_post_contact_extra_close_deg);
+                    if (final_angle < angle - 1e-6f)
+                    {
+                        Serial.print("# Squishable extra close: ");
+                        Serial.print(angle, 2);
+                        Serial.print(" -> ");
+                        Serial.print(final_angle, 2);
+                        Serial.println(" deg");
+                        writeServoFractional(final_angle);
+                    }
+                }
+                servo_empirical_deg = final_angle;
                 Serial.print("# Stored servo_empirical = ");
                 Serial.print(servo_empirical_deg, 2); Serial.println(" deg");
-                return angle;
+                return final_angle;
             }
 
             angle -= dyn_grip_deg_per_sample_runtime;
@@ -1346,6 +1373,7 @@
         Serial.println("#");
         Serial.println("# Dynamic operations (block until trigger / cancel):");
         Serial.println("#   dynamiclower <z_start> <deriv_thresh> <N> [<servo_deg> [<signed>]]  -> sets z_empirical");
+        Serial.println("#   DLR <robot_z_mm> <deriv_thresh> <N> [<servo_deg> [<signed>]]         same frame as Python FK");
         Serial.println("#     deriv_thresh: mA/sample spike to detect; N: consecutive samples required");
         Serial.println("#     servo_deg optional; signed=1 for positive-only derivative (default 0=magnitude)");
         Serial.println("#   dynamicgrip <angle_start> <deriv_thresh> <N> [<signed>]  -> sets servo_empirical");
@@ -1353,6 +1381,7 @@
         Serial.println("#   dynset <key> <value>     set dynamic tuning value");
         Serial.println("#     keys: dg_start_deg dl_start_mm deriv_thresh_ma deriv_n_steps_grip deriv_n_steps_lower signed_only");
         Serial.println("#           dl_servo_deg(current|deg) grip_open_offset_deg grip_deg_per_sample");
+        Serial.println("#           grip_object_squishable grip_post_contact_extra_close_deg");
         Serial.println("#           lower_speed_mm_s deriv_nonzero_eps_ma pattern_nonzero_n");
         Serial.println("#           pattern_sum_grip_ma pattern_sum_lower_ma");
         Serial.println("#   set_l_preset <mm>       runtime set for z compensation (z += l_preset*cos(servo))");
@@ -1436,6 +1465,8 @@
         Serial.print("#   grip_open_offset_deg = "); Serial.println(dyn_grip_open_offset_deg, 3);
         Serial.print("#   grip_deg_per_sample  = "); Serial.println(dyn_grip_deg_per_sample_runtime, 4);
         Serial.print("#   lower_speed_mm_s     = "); Serial.println(dyn_lower_speed_mm_s_runtime, 3);
+        Serial.print("#   grip_object_squishable = "); Serial.println(dyn_grip_object_squishable ? 1 : 0);
+        Serial.print("#   grip_post_contact_extra_close_deg = "); Serial.println(dyn_grip_post_contact_extra_close_deg, 3);
 
         Serial.print("#   deriv_nonzero_eps_ma   = "); Serial.println(dyn_deriv_nonzero_eps_ma, 3);
         Serial.print("#   pattern_nonzero_n      = "); Serial.println(dyn_deriv_pattern_nonzero_n);
@@ -1526,6 +1557,16 @@
         {
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset lower_speed_mm_s"); return; }
             dyn_lower_speed_mm_s_runtime = max(0.1f, f);
+        }
+        else if (key == "grip_object_squishable")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset grip_object_squishable"); return; }
+            dyn_grip_object_squishable = (f != 0.0f);
+        }
+        else if (key == "grip_post_contact_extra_close_deg")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset grip_post_contact_extra_close_deg"); return; }
+            dyn_grip_post_contact_extra_close_deg = max(0.0f, f);
         }
         else if (key == "deriv_nonzero_eps_ma")
         {
@@ -1701,6 +1742,33 @@
                 return;
             }
             float result = dynamicGrip(vals[0], vals[1], (int)vals[2], vals[3] != 0.0f);
+            if (!isnan(result)) Serial.println("DONE");
+            return;
+        }
+
+        // ---- dynamiclower_robot / dlr ----
+        // DLR <robot_z_mm> <deriv_thresh> <N_steps> [<servo_deg> [<signed_0_1>]]
+        if (cmd.startsWith("dynamiclower_robot") || cmd.startsWith("dlr"))
+        {
+            int sp = cmd.startsWith("dynamiclower_robot") ? 18 : 3;
+            String args = cmd.substring(sp); args.trim();
+            const float defs[5] = {
+                dyn_default_dl_start_mm,
+                dyn_default_deriv_thresh_ma,
+                (float)dyn_default_deriv_n_steps_lower,
+                dyn_default_dl_servo_deg,
+                dyn_default_signed_only ? 1.0f : 0.0f
+            };
+            float vals[5];
+            if (!parseFloatArgs(args, vals, 5, defs))
+            {
+                Serial.println("# ERR dynamiclower_robot: bad args");
+                return;
+            }
+            float z_start_mm = robotZToDynamicLowerMm(vals[0]);
+            Serial.print("# DLR robot_z_mm = "); Serial.print(vals[0], 2);
+            Serial.print(" -> direct_J3_mm = "); Serial.println(z_start_mm, 2);
+            float result = dynamicLower(z_start_mm, vals[1], (int)vals[2], vals[3], vals[4] != 0.0f);
             if (!isnan(result)) Serial.println("DONE");
             return;
         }

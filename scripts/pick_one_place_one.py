@@ -61,25 +61,26 @@ VALID_PICK_PHI_MODES = {
     "current_fk",
 }
 
-Z_MAX_MM: float = 275.0
+Z_MAX_MM: float = 290.0
+Z_GRASP_MIN_MM: float = 140.0
 PLACE_APPROACH_Z_MM: float = Z_MAX_MM
-GRIPPER_OFFSET_MM: float = 120.0
+GRIPPER_OFFSET_MM: float = 135.0
 HOVER_HEIGHT_MM: float = Z_MAX_MM
 GRASP_OFFSET_MM: float = GRIPPER_OFFSET_MM
-USE_ROBUST_OBJECT_Z = True
+USE_ROBUST_OBJECT_Z = False
 ROBUST_TOP_PERCENTILE = 95.0
 ROBUST_BOTTOM_PERCENTILE = 5.0
 TOP_SPREAD_LOW_PERCENTILE = 90.0
 TOP_SPREAD_HIGH_PERCENTILE = 99.0
 Z_UNCERTAINTY_CLEARANCE_GAIN = 1.0
-Z_UNCERTAINTY_CLEARANCE_MIN_MM = 0.0
+Z_UNCERTAINTY_CLEARANCE_MIN_MM = 10.0
 Z_UNCERTAINTY_CLEARANCE_MAX_MM = 20.0
 Z_UNCERTAINTY_WARN_MM = 10.0
 PICK_EXTRA_CLEARANCE_MM = 0.0
-PLACE_RELEASE_GAP_MM = 20.0
-PLACE_Z_UNCERTAINTY_GAIN = 0.1
-PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 5.0
-PICK_Z_UNCERTAINTY_GAIN = 1.0
+PLACE_RELEASE_GAP_MM = 180.0
+PLACE_Z_UNCERTAINTY_GAIN = 0.30
+PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 10.0
+PICK_Z_UNCERTAINTY_GAIN = .25
 PICK_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 20.0
 MIN_OBJECT_HEIGHT_MM = 2.0
 MAX_OBJECT_HEIGHT_MM = 180.0
@@ -100,7 +101,6 @@ COARSE_MOVE_TIME_S: float = 1.10
 XY_MOVE_TIME_S: float = 1.50
 PICK_Z_MOVE_TIME_S: float = 0.60
 PLACE_Z_MOVE_TIME_S: float = 0.60
-PLACE_RELEASE_DWELL_S: float = 0.3
 
 CONNECT_ROBOT: bool = True
 ENABLE_MOTORS_ON_START: bool = True
@@ -114,7 +114,26 @@ WINDOW: str = "Pick One Place One Repeatability"
 
 CLAW_OPEN_DEG: int = 65
 CLAW_CLOSED_DEG: int = 0
-CLAW_SETTLE_S: float = 0.30
+ENABLE_DYNAMIC_PICK = True
+USE_DYNAMIC_PICK_HEIGHT = False
+USE_DYNAMIC_PICK_GRIP_ANGLE = True
+DYNAMIC_PICK_FALLBACK_TO_FIXED = False
+DYNAMIC_LOWER_CLEARANCE_MM = 20.0
+DYNAMIC_SERVO_MARGIN_DEG = 10.0
+GRIPPER_GEOMETRY_L_MM = 120.0
+GRIPPER_SERVO_MIN_DEG = 0.0
+GRIPPER_SERVO_MAX_DEG = 70.0
+DYNAMIC_PICK_DEFAULT_SERVO_DEG = 55.0
+DYNAMIC_LOWER_DERIV_THRESH_MA = 30.0
+DYNAMIC_GRIP_DERIV_THRESH_MA = 500.0
+DYNAMIC_CONTACT_LOOKBACK_COUNT = 3
+DYNAMIC_CONTACT_NONZERO_EPS_MA = 1.0
+DYNAMIC_CONTACT_SUM_GRIP_MA = 1500.0
+DYNAMIC_CONTACT_SUM_LOWER_MA = 50.0
+DEFAULT_OBJECT_RIGIDITY = "squishable"
+SQUISHABLE_POST_CONTACT_EXTRA_CLOSE_DEG = 5.0
+DYNAMIC_PICK_TRACE_DEBUG = False
+DYNAMIC_PICK_TRACE_QUERY_POS = False
 
 REQUIRE_CONFIRM_BEFORE_PICK = False
 REQUIRE_CONFIRM_BEFORE_PLACE = False
@@ -166,6 +185,7 @@ from hardware.cameras.overhead_camera import SimpleOverheadCamera
 from hardware.cameras.stereo_apriltag_viewer import SimpleStereoCamera, build_detector
 from motion.pick_z_policy import compute_pick_z_plan
 from motion.place_z_policy import compute_place_z_plan
+from motion.dynamic_grasp_policy import build_dynamic_pick_plan
 from motion.pick_validation_motion import _candidate_phi_or_current, _print_fk, startup_robot
 from scripts.pick_validation_display import _fmt_xy, _hr, make_display, print_validation
 from test_calibration_bundle_live_stereo_z_pickplace import (
@@ -182,6 +202,16 @@ from vision.pick_z_resolver import validate_z_command
 from vision.grasp_xy_policy import compute_grasp_xy_with_local_height
 from vision.stereo_rectifier import StereoRectifier
 from vision.torch_device import select_torch_device
+
+
+# Internal dynamic command defaults. The user-facing contact trigger knobs live
+# in the USER SETTINGS block above; keep these stable unless we're deliberately
+# changing the firmware command semantics.
+_PUSH_DYNAMIC_FIRMWARE_SETTINGS_ON_START = True
+_DYNAMIC_LOWER_N_STEPS = 1
+_DYNAMIC_LOWER_SIGNED_ONLY = False
+_DYNAMIC_GRIP_N_STEPS = 3
+_DYNAMIC_GRIP_SIGNED_ONLY = False
 
 
 def _configure_modules() -> None:
@@ -323,6 +353,208 @@ def _print_object_z_diagnostics(prefix: str, candidate) -> None:
     print(f"{prefix} z warnings: {z_debug.warnings}")
 
 
+def _candidate_rigidity_type(candidate) -> str:
+    rigidity = str(DEFAULT_OBJECT_RIGIDITY).strip().lower()
+    return rigidity if rigidity else "rigid"
+
+
+def _apply_dynamic_object_grip_settings(robot, candidate) -> None:
+    if robot is None:
+        return
+    rigidity = _candidate_rigidity_type(candidate)
+    is_squishable = rigidity == "squishable"
+    extra_close_deg = float(SQUISHABLE_POST_CONTACT_EXTRA_CLOSE_DEG) if is_squishable else 0.0
+    class_name = getattr(getattr(candidate, "yolo", None), "class_name", "unknown")
+
+    settings = [
+        ("grip_object_squishable", bool(is_squishable)),
+        ("grip_post_contact_extra_close_deg", float(extra_close_deg)),
+    ]
+    print(
+        "[DYNSET] object grip profile: "
+        f"class={class_name} rigidity={rigidity} extra_close_deg={extra_close_deg:.1f}"
+    )
+    for key, value in settings:
+        ok = False
+        if hasattr(robot, "dynset"):
+            ok = bool(robot.dynset(key, value))
+        else:
+            value_str = "1" if isinstance(value, bool) and value else "0" if isinstance(value, bool) else f"{float(value):.3f}"
+            robot.send(f"dynset {key} {value_str}")
+            ok = bool(robot.read_until("dynset OK", 3.0))
+            time.sleep(0.05)
+            robot.flush()
+        if ok:
+            if isinstance(value, bool):
+                print(f"[DYNSET] {key} = {1 if value else 0}")
+            else:
+                print(f"[DYNSET] {key} = {float(value):.3f}")
+        else:
+            if isinstance(value, bool):
+                print(f"[DYNSET] WARN failed to apply {key} = {1 if value else 0}")
+            else:
+                print(f"[DYNSET] WARN failed to apply {key} = {float(value):.3f}")
+
+
+def _apply_dynamic_firmware_settings(robot) -> None:
+    if robot is None:
+        return
+    if not _PUSH_DYNAMIC_FIRMWARE_SETTINGS_ON_START:
+        print("[DYNSET] startup push disabled.")
+        return
+
+    settings = [
+        ("deriv_nonzero_eps_ma", float(DYNAMIC_CONTACT_NONZERO_EPS_MA)),
+        ("pattern_nonzero_n", int(DYNAMIC_CONTACT_LOOKBACK_COUNT)),
+        ("pattern_sum_grip_ma", float(DYNAMIC_CONTACT_SUM_GRIP_MA)),
+        ("pattern_sum_lower_ma", float(DYNAMIC_CONTACT_SUM_LOWER_MA)),
+    ]
+    print("[DYNSET] applying dynamic contact-trigger settings...")
+    for key, value in settings:
+        ok = False
+        if hasattr(robot, "dynset"):
+            ok = bool(robot.dynset(key, value))
+        else:
+            value_str = f"{value:.3f}" if isinstance(value, float) else str(value)
+            robot.send(f"dynset {key} {value_str}")
+            ok = bool(robot.read_until("dynset OK", 3.0))
+            time.sleep(0.05)
+            robot.flush()
+        if ok:
+            if isinstance(value, float):
+                print(f"[DYNSET] {key} = {value:.3f}")
+            else:
+                print(f"[DYNSET] {key} = {value}")
+        else:
+            if isinstance(value, float):
+                print(f"[DYNSET] WARN failed to apply {key} = {value:.3f}")
+            else:
+                print(f"[DYNSET] WARN failed to apply {key} = {value}")
+
+
+def _print_dynamic_pick_plan(plan) -> None:
+    print("[DYNAMIC PICK PLAN]")
+    print(f"class = {plan.object_class}")
+    print(f"target_xy_mm = ({plan.target_xy_mm[0]:.1f}, {plan.target_xy_mm[1]:.1f})")
+    print(f"phi_deg = {plan.phi_deg:.2f}")
+    print(f"phi_source = {plan.phi_source}")
+    print(f"measured_grip_width_mm = {plan.measured_grip_width_mm}")
+    print(f"grip_width_source = {plan.grip_width_source}")
+    print(f"use_dynamic_pick_height = {USE_DYNAMIC_PICK_HEIGHT}")
+    print(f"use_dynamic_pick_grip_angle = {USE_DYNAMIC_PICK_GRIP_ANGLE}")
+    print(f"initial_servo_angle_deg = {plan.initial_servo_angle_deg:.2f}")
+    print(f"servo_angle_margin_deg = {plan.servo_angle_margin_deg:.2f}")
+    print(f"z_pregrasp_robot_z_mm = {plan.dynamic_pregrasp_robot_z_mm:.2f}")
+    print(f"z_probe_start_mm = {plan.dynamic_lower_start_z_mm:.2f}")
+    print(f"dynamic_grip_start_angle_deg = {plan.dynamic_grip_start_angle_deg:.2f}")
+    print(f"lower_deriv_thresh_ma = {float(DYNAMIC_LOWER_DERIV_THRESH_MA):.1f}")
+    print(f"grip_deriv_thresh_ma = {float(DYNAMIC_GRIP_DERIV_THRESH_MA):.1f}")
+    print(f"contact_lookback_count = {int(DYNAMIC_CONTACT_LOOKBACK_COUNT)}")
+    print(f"contact_nonzero_eps_ma = {float(DYNAMIC_CONTACT_NONZERO_EPS_MA):.1f}")
+    print(f"contact_sum_grip_ma = {float(DYNAMIC_CONTACT_SUM_GRIP_MA):.1f}")
+    print(f"contact_sum_lower_ma = {float(DYNAMIC_CONTACT_SUM_LOWER_MA):.1f}")
+    print(f"warnings = {plan.warnings}")
+
+
+def _print_dynamic_pick_trace(robot, label: str, *, target_z_mm: float | None = None, note: str | None = None) -> None:
+    if not DYNAMIC_PICK_TRACE_DEBUG:
+        return
+    print(f"[DYNAMIC TRACE] {label}")
+    x_fk, y_fk, z_fk, phi_fk = robot.fk()
+    print(f"  fk_xyzphi = ({x_fk:.2f}, {y_fk:.2f}, {z_fk:.2f}, {phi_fk:.2f})")
+    print(f"  q_est.z_mm = {float(robot.q_est.z_mm):.2f}")
+    est_steps = robot.joints_to_steps(robot.q_est)
+    print(f"  est_steps = {est_steps}")
+    if target_z_mm is not None and hasattr(robot, "z_command_trace"):
+        trace = robot.z_command_trace(float(target_z_mm), include_actual_pos=DYNAMIC_PICK_TRACE_QUERY_POS)
+        print(f"  target_robot_z_mm = {trace.target_robot_z_mm:.2f}")
+        print(f"  current_fk_z_mm = {trace.current_fk_z_mm:.2f}")
+        print(f"  current_q_est_z_mm = {trace.current_q_est_z_mm:.2f}")
+        print(f"  current_est_j3_steps = {trace.current_est_j3_steps}")
+        print(f"  current_est_j3_mm = {trace.current_est_j3_mm:.2f}")
+        print(f"  current_est_direct_j3_mm = {trace.current_est_direct_j3_mm:.2f}")
+        print(f"  target_est_j3_steps = {trace.target_est_j3_steps}")
+        print(f"  target_est_j3_mm = {trace.target_est_j3_mm:.2f}")
+        print(f"  target_direct_j3_mm = {trace.target_direct_j3_mm:.2f}")
+        if trace.actual_steps is not None:
+            print(f"  actual_steps = {trace.actual_steps}")
+        if trace.actual_j3_mm is not None:
+            print(f"  actual_j3_mm = {trace.actual_j3_mm:.2f}")
+        if trace.actual_direct_j3_mm is not None:
+            print(f"  actual_direct_j3_mm = {trace.actual_direct_j3_mm:.2f}")
+        if trace.inferred_robot_to_direct_offset_mm is not None:
+            print(f"  inferred_robot_to_direct_offset_mm = {trace.inferred_robot_to_direct_offset_mm:.2f}")
+        if trace.warnings:
+            print(f"  warnings = {trace.warnings}")
+    if note:
+        print(f"  note = {note}")
+
+
+def _store_dynamic_pick_results(
+    candidate,
+    plan,
+    lower_result=None,
+    grip_result=None,
+    *,
+    z_empirical_robot_frame_mm: float | None = None,
+    actual_initial_servo_angle_deg: float | None = None,
+) -> None:
+    candidate.measured_grip_width_mm = plan.measured_grip_width_mm
+    candidate.grip_width_source = plan.grip_width_source
+    candidate.initial_servo_angle_deg = (
+        plan.initial_servo_angle_deg
+        if actual_initial_servo_angle_deg is None
+        else float(actual_initial_servo_angle_deg)
+    )
+    candidate.dynamic_lower_start_z_mm = plan.dynamic_lower_start_z_mm
+    candidate.dynamic_pregrasp_robot_z_mm = plan.dynamic_pregrasp_robot_z_mm
+    candidate.dynamic_grip_start_angle_deg = plan.dynamic_grip_start_angle_deg
+    candidate.servo_empirical_deg = None if grip_result is None else grip_result.servo_empirical_deg
+    candidate.z_empirical_mm = None if lower_result is None else lower_result.z_empirical_mm
+    candidate.z_empirical_robot_frame_mm = z_empirical_robot_frame_mm
+    candidate.dynamic_pick_warnings = list(plan.warnings)
+
+
+def _resolve_release_servo_angle_deg(held_object: CandidateDebug | None, *, fallback_deg: float) -> tuple[float, str]:
+    if held_object is not None:
+        candidate = held_object.candidate
+        angle = getattr(candidate, "initial_servo_angle_deg", None)
+        try:
+            angle_f = float(angle)
+        except (TypeError, ValueError):
+            angle_f = None
+        if angle_f is not None and np.isfinite(angle_f):
+            return angle_f, "held_object.initial_servo_angle_deg"
+    return float(fallback_deg), "fallback_default"
+
+
+def _command_servo_angle(robot, angle_deg: float) -> bool:
+    if hasattr(robot, "set_servo_fractional"):
+        return bool(robot.set_servo_fractional(float(angle_deg)))
+    return bool(robot.servo(int(round(float(angle_deg)))))
+
+
+def _execute_fixed_pick_path(robot, x: float, y: float, phi: float, z_travel: float, z_grasp: float) -> bool:
+    print(f"[PICK] opening claw servo={CLAW_OPEN_DEG}")
+    robot.servo(CLAW_OPEN_DEG)
+
+    if not _move_checked(robot, "[PICK] raise", z_mm=z_travel, move_time_s=COARSE_MOVE_TIME_S):
+        return False
+    if not _move_checked(robot, "[PICK] XY+phi", x_mm=x, y_mm=y, z_mm=z_travel, phi_deg=phi, move_time_s=XY_MOVE_TIME_S):
+        return False
+    if not _move_checked(robot, "[PICK] grasp", z_mm=z_grasp, move_time_s=PICK_Z_MOVE_TIME_S):
+        return False
+
+    print(f"[PICK] closing claw servo={CLAW_CLOSED_DEG}")
+    robot.servo(CLAW_CLOSED_DEG)
+
+    if not _move_checked(robot, "[PICK] retract", z_mm=z_travel, move_time_s=COARSE_MOVE_TIME_S):
+        return False
+
+    print("[PICK] OK - item should be held.")
+    return True
+
+
 def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None) -> bool:
     if robot is None:
         print("[PICK] robot is not connected.")
@@ -385,6 +617,11 @@ def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None
         z_travel = float(pick_plan.travel_z_mm)
         z_grasp = float(pick_plan.final_grasp_z_mm)
 
+    # Enforce a global minimum grasp height for safety/consistency.
+    if z_grasp < Z_GRASP_MIN_MM:
+        print(f"[PICK] clamping z_grasp from {z_grasp:.1f} to zmin {Z_GRASP_MIN_MM:.1f}")
+        z_grasp = float(Z_GRASP_MIN_MM)
+
     phi = _candidate_phi_or_current(robot, c)
 
     for label, z in (("travel", z_travel), ("grasp", z_grasp)):
@@ -400,29 +637,231 @@ def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None
     print(f"[PICK] z plan: travel={z_travel:.1f}, grasp={z_grasp:.1f}")
     _print_object_z_diagnostics("[PICK]", c)
 
-    if not _confirm("[PICK] Real pick motion will open claw, descend, close claw, and retract.", REQUIRE_CONFIRM_BEFORE_PICK):
+    if not _confirm("[PICK] Real pick motion will execute the configured pick sequence and retract.", REQUIRE_CONFIRM_BEFORE_PICK):
         print("[PICK] canceled by user.")
         return False
 
-    print(f"[PICK] opening claw servo={CLAW_OPEN_DEG}")
-    robot.servo(CLAW_OPEN_DEG)
-    time.sleep(CLAW_SETTLE_S)
+    if not ENABLE_DYNAMIC_PICK:
+        return _execute_fixed_pick_path(robot, x, y, phi, z_travel, z_grasp)
 
+    if not hasattr(robot, "dynamic_lower_robot_z") or not hasattr(robot, "dynamic_grip") or not hasattr(robot, "set_servo_fractional"):
+        print("[PICK] dynamic pick helpers unavailable on Robot.")
+        if DYNAMIC_PICK_FALLBACK_TO_FIXED:
+            print("[PICK] falling back to fixed open-descend-close path.")
+            return _execute_fixed_pick_path(robot, x, y, phi, z_travel, z_grasp)
+        return False
+
+    try:
+        dynamic_plan = build_dynamic_pick_plan(
+            c,
+            dbg,
+            robot,
+            bundle,
+            z_grasp_mm=z_grasp,
+            gripper_offset_mm=GRIPPER_OFFSET_MM,
+            z_max_mm=Z_MAX_MM,
+            dynamic_lower_clearance_mm=DYNAMIC_LOWER_CLEARANCE_MM,
+            servo_angle_margin_deg=DYNAMIC_SERVO_MARGIN_DEG,
+            gripper_geometry_l_mm=GRIPPER_GEOMETRY_L_MM,
+            gripper_servo_min_deg=GRIPPER_SERVO_MIN_DEG,
+            gripper_servo_max_deg=GRIPPER_SERVO_MAX_DEG,
+            fallback_initial_servo_angle_deg=DYNAMIC_PICK_DEFAULT_SERVO_DEG,
+        )
+    except Exception as exc:
+        print(f"[PICK] dynamic plan build failed: {exc}")
+        if DYNAMIC_PICK_FALLBACK_TO_FIXED:
+            print("[PICK] falling back to fixed open-descend-close path.")
+            return _execute_fixed_pick_path(robot, x, y, phi, z_travel, z_grasp)
+        return False
+
+    probe_reason = validate_z_command(dynamic_plan.dynamic_lower_start_z_mm, "[PICK] probe_start")
+    if probe_reason:
+        print(f"[PICK] ABORT: {probe_reason}")
+        return False
+
+    descent_target_z_mm = float(dynamic_plan.dynamic_pregrasp_robot_z_mm if USE_DYNAMIC_PICK_HEIGHT else z_grasp)
+    descent_reason = validate_z_command(descent_target_z_mm, "[PICK] descent_target")
+    if descent_reason:
+        print(f"[PICK] ABORT: {descent_reason}")
+        return False
+
+    preset_servo_angle_deg = (
+        float(dynamic_plan.initial_servo_angle_deg)
+        if USE_DYNAMIC_PICK_GRIP_ANGLE
+        else float(CLAW_OPEN_DEG)
+    )
+
+    _apply_dynamic_object_grip_settings(robot, c)
+    _print_dynamic_pick_plan(dynamic_plan)
+    _print_dynamic_pick_trace(
+        robot,
+        "plan built",
+        target_z_mm=descent_target_z_mm,
+        note=(
+            "Normal robot moves convert robot z -> target J3 steps via joints_to_steps. "
+            "DL sends the direct J3 mm value shown as direct_dynamiclower_j3_mm."
+        ),
+    )
+
+    print(f"[PICK] servo preset angle={preset_servo_angle_deg:.2f} source={'geometry' if USE_DYNAMIC_PICK_GRIP_ANGLE else 'fixed_open'}")
+    if not robot.set_servo_fractional(preset_servo_angle_deg):
+        print("[PICK] failed to set initial dynamic servo angle.")
+        return False
+    _print_dynamic_pick_trace(
+        robot,
+        "after servo preset",
+        target_z_mm=descent_target_z_mm,
+        note="Servo preset only; no J3 motion yet.",
+    )
+
+    _print_dynamic_pick_trace(robot, "before raise", target_z_mm=z_travel)
     if not _move_checked(robot, "[PICK] raise", z_mm=z_travel, move_time_s=COARSE_MOVE_TIME_S):
         return False
+    _print_dynamic_pick_trace(robot, "after raise", target_z_mm=z_travel)
+
+    _print_dynamic_pick_trace(robot, "before XY+phi", target_z_mm=z_travel)
     if not _move_checked(robot, "[PICK] XY+phi", x_mm=x, y_mm=y, z_mm=z_travel, phi_deg=phi, move_time_s=XY_MOVE_TIME_S):
         return False
-    if not _move_checked(robot, "[PICK] grasp", z_mm=z_grasp, move_time_s=PICK_Z_MOVE_TIME_S):
+    _print_dynamic_pick_trace(robot, "after XY+phi", target_z_mm=descent_target_z_mm)
+
+    if descent_target_z_mm < z_travel - 1e-6:
+        _print_dynamic_pick_trace(
+            robot,
+            "before descent-target move",
+            target_z_mm=descent_target_z_mm,
+            note=(
+                "This is still a normal Cartesian move. "
+                "When USE_DYNAMIC_PICK_HEIGHT=False, this is the feedforward grasp Z descent."
+            ),
+        )
+        if not _move_checked(
+            robot,
+            "[PICK] descent target",
+            z_mm=descent_target_z_mm,
+            move_time_s=PICK_Z_MOVE_TIME_S,
+        ):
+            return False
+        _print_dynamic_pick_trace(
+            robot,
+            "after descent-target move",
+            target_z_mm=descent_target_z_mm,
+            note=(
+                "If the slam already happened, it was before DL. "
+                "With dynamic height off, the next stage is DG from this feedforward Z."
+            ),
+        )
+
+    z_empirical_robot_frame_mm = None
+    lower_result = None
+    if USE_DYNAMIC_PICK_HEIGHT:
+        _print_dynamic_pick_trace(
+            robot,
+            "before DL command",
+            target_z_mm=dynamic_plan.dynamic_lower_start_z_mm,
+            note=(
+                f"About to send: DLR {dynamic_plan.dynamic_lower_start_z_mm:.3f} "
+                f"{float(DYNAMIC_LOWER_DERIV_THRESH_MA):.3f} {int(_DYNAMIC_LOWER_N_STEPS)} "
+                f"{preset_servo_angle_deg:.3f} {1 if _DYNAMIC_LOWER_SIGNED_ONLY else 0}"
+            ),
+        )
+        lower_result = robot.dynamic_lower_robot_z(
+            robot_z_mm=dynamic_plan.dynamic_lower_start_z_mm,
+            deriv_thresh_ma=DYNAMIC_LOWER_DERIV_THRESH_MA,
+            n_steps=_DYNAMIC_LOWER_N_STEPS,
+            servo_deg=preset_servo_angle_deg,
+            signed_only=_DYNAMIC_LOWER_SIGNED_ONLY,
+        )
+        print(
+            "[PICK] dynamic lower result: "
+            f"ok={lower_result.ok} z_empirical_mm={lower_result.z_empirical_mm} "
+            f"servo_empirical_deg={lower_result.servo_empirical_deg} error={lower_result.error}"
+        )
+        if not lower_result.ok:
+            print("[PICK] ABORT: dynamic lower failed.")
+            return False
+
+        if lower_result.z_empirical_mm is not None and np.isfinite(float(lower_result.z_empirical_mm)):
+            z_empirical_robot_frame_mm = float(robot.teensy_direct_j3_mm_to_robot_z(float(lower_result.z_empirical_mm)))
+            empirical_reason = validate_z_command(z_empirical_robot_frame_mm, "[PICK] z_empirical_robot_frame")
+            if empirical_reason:
+                print(f"[PICK] ABORT: {empirical_reason}")
+                return False
+            print(
+                "[PICK] empirical Z conversion: "
+                f"direct_j3_mm={float(lower_result.z_empirical_mm):.2f} "
+                f"-> robot_z_mm={z_empirical_robot_frame_mm:.2f}"
+            )
+            _print_dynamic_pick_trace(
+                robot,
+                "before empirical-z move",
+                target_z_mm=z_empirical_robot_frame_mm,
+                note="Move to compensated empirical robot-frame Z before dynamic grip.",
+            )
+            if not _move_checked(
+                robot,
+                "[PICK] empirical z",
+                z_mm=z_empirical_robot_frame_mm,
+                move_time_s=PICK_Z_MOVE_TIME_S,
+            ):
+                return False
+            _print_dynamic_pick_trace(
+                robot,
+                "after empirical-z move",
+                target_z_mm=z_empirical_robot_frame_mm,
+                note="At compensated empirical robot-frame Z, ready for dynamic grip.",
+            )
+
+        if hasattr(robot, "sync_estimate_from_teensy_steps"):
+            if not robot.sync_estimate_from_teensy_steps():
+                print("[PICK] WARN: failed to sync pose from Teensy after DL; estimate may be stale.")
+        _print_dynamic_pick_trace(
+            robot,
+            "after DL result",
+            target_z_mm=dynamic_plan.dynamic_lower_start_z_mm,
+            note="q_est is re-synced from Teensy POS after DL. z_empirical remains grasp metadata only.",
+        )
+    else:
+        print("[PICK] dynamic height disabled; using feedforward grasp Z descent and skipping DLR / empirical-z move.")
+
+    _print_dynamic_pick_trace(
+        robot,
+        "before DG command",
+        note=(
+            f"About to send: DG {dynamic_plan.dynamic_grip_start_angle_deg:.3f} "
+            f"{float(DYNAMIC_GRIP_DERIV_THRESH_MA):.3f} {int(_DYNAMIC_GRIP_N_STEPS)} "
+            f"{1 if _DYNAMIC_GRIP_SIGNED_ONLY else 0}"
+        ),
+    )
+    grip_result = robot.dynamic_grip(
+        angle_start_deg=dynamic_plan.dynamic_grip_start_angle_deg,
+        deriv_thresh_ma=DYNAMIC_GRIP_DERIV_THRESH_MA,
+        n_steps=_DYNAMIC_GRIP_N_STEPS,
+        signed_only=_DYNAMIC_GRIP_SIGNED_ONLY,
+    )
+    print(
+        "[PICK] dynamic grip result: "
+        f"ok={grip_result.ok} z_empirical_mm={grip_result.z_empirical_mm} "
+        f"servo_empirical_deg={grip_result.servo_empirical_deg} error={grip_result.error}"
+    )
+    if not grip_result.ok:
+        print("[PICK] ABORT: dynamic grip failed.")
         return False
 
-    print(f"[PICK] closing claw servo={CLAW_CLOSED_DEG}")
-    robot.servo(CLAW_CLOSED_DEG)
-    time.sleep(CLAW_SETTLE_S)
+    _store_dynamic_pick_results(
+        c,
+        dynamic_plan,
+        lower_result,
+        grip_result,
+        z_empirical_robot_frame_mm=z_empirical_robot_frame_mm,
+        actual_initial_servo_angle_deg=preset_servo_angle_deg,
+    )
 
+    _print_dynamic_pick_trace(robot, "before retract", target_z_mm=z_travel)
     if not _move_checked(robot, "[PICK] retract", z_mm=z_travel, move_time_s=COARSE_MOVE_TIME_S):
         return False
+    _print_dynamic_pick_trace(robot, "after retract", target_z_mm=z_travel)
 
-    print("[PICK] OK - item should be held.")
+    print("[PICK] OK - dynamic lower/grip succeeded and item should be held.")
     return True
 
 
@@ -539,6 +978,10 @@ def execute_place_zone(robot, held_object: CandidateDebug | None, *, allow_manua
             place_phi = float(c.pick_phi_deg)
 
     travel_z = float(place_plan.approach_z_mm)
+    release_servo_angle_deg, release_servo_source = _resolve_release_servo_angle_deg(
+        held_object,
+        fallback_deg=CLAW_OPEN_DEG,
+    )
     for label, z in (("travel", travel_z), ("place", place_z), ("retract", float(place_plan.retract_z_mm))):
         reason = validate_z_command(z, f"[PLACE] {label}")
         if reason:
@@ -554,6 +997,7 @@ def execute_place_zone(robot, held_object: CandidateDebug | None, *, allow_manua
     print(f"[PLACE] zone={zone['name']}")
     print(f"[PLACE] target x={x:.1f} y={y:.1f} place_z={place_z:.1f} phi={place_phi:.1f}")
     print(f"[PLACE] z source={place_source}")
+    print(f"[PLACE] release_servo_angle_deg = {release_servo_angle_deg:.2f} source={release_servo_source}")
     print("[PLACE Z PLAN]")
     print(f"destination_surface_z_mm = {destination_surface_z_mm:.3f}")
     print(f"object_height_mm = {object_height_mm:.3f}")
@@ -564,7 +1008,7 @@ def execute_place_zone(robot, held_object: CandidateDebug | None, *, allow_manua
     print(f"final_release_z_mm = {place_plan.final_release_z_mm:.3f}")
     print(f"approach/retract_z_mm = {place_plan.approach_z_mm:.3f}/{place_plan.retract_z_mm:.3f}")
     print(f"warnings = {place_plan.warnings + object_warnings}")
-    print("[PLACE] sequence: raise -> XY/phi at safe Z -> descend -> open claw -> dwell -> retract")
+    print("[PLACE] sequence: raise -> XY/phi at safe Z -> descend -> open claw -> retract")
 
     if not _confirm("[PLACE] Real place motion will move to the saved zone and open the claw.", REQUIRE_CONFIRM_BEFORE_PLACE):
         print("[PLACE] canceled by user.")
@@ -577,9 +1021,9 @@ def execute_place_zone(robot, held_object: CandidateDebug | None, *, allow_manua
     if not _move_checked(robot, "[PLACE] descend", z_mm=place_z, move_time_s=PLACE_Z_MOVE_TIME_S):
         return False
 
-    print(f"[PLACE] opening claw servo={CLAW_OPEN_DEG}")
-    robot.servo(CLAW_OPEN_DEG)
-    time.sleep(float(PLACE_RELEASE_DWELL_S))
+    print(f"[PLACE] opening claw servo={release_servo_angle_deg:.2f}")
+    if not _command_servo_angle(robot, release_servo_angle_deg):
+        print("[PLACE] WARN failed to command release servo angle.")
 
     if not _move_checked(robot, "[PLACE] retract", z_mm=float(place_plan.retract_z_mm), move_time_s=COARSE_MOVE_TIME_S):
         return False
@@ -608,6 +1052,18 @@ def main() -> int:
     )
     print(f"[MAIN] local_height_aware_grasp_xy={USE_LOCAL_HEIGHT_AWARE_GRASP_XY}")
     print(f"[MAIN] confirmations: pick={REQUIRE_CONFIRM_BEFORE_PICK} place={REQUIRE_CONFIRM_BEFORE_PLACE}")
+    print(
+        f"[MAIN] dynamic contact gate: "
+        f"lookback={int(DYNAMIC_CONTACT_LOOKBACK_COUNT)} "
+        f"eps={DYNAMIC_CONTACT_NONZERO_EPS_MA:.1f} "
+        f"grip_sum={DYNAMIC_CONTACT_SUM_GRIP_MA:.1f} "
+        f"lower_sum={DYNAMIC_CONTACT_SUM_LOWER_MA:.1f} "
+        f"push_on_start={_PUSH_DYNAMIC_FIRMWARE_SETTINGS_ON_START}"
+    )
+    print(
+        f"[MAIN] object rigidity default={DEFAULT_OBJECT_RIGIDITY} "
+        f"squishable_extra_close_deg={SQUISHABLE_POST_CONTACT_EXTRA_CLOSE_DEG:.1f}"
+    )
     _load_place_surface_zone()
     _hr("", "=")
 
@@ -632,6 +1088,7 @@ def main() -> int:
     stereo = SimpleStereoCamera(STEREO_INDEX)
 
     robot = startup_robot()
+    _apply_dynamic_firmware_settings(robot)
 
     state: SurveyState | None = None
     held_object: CandidateDebug | None = None

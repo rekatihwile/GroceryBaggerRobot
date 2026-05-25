@@ -31,7 +31,6 @@ PLACE_CLAW_OPEN_DEG = 45
 COARSE_MOVE_TIME_S = 1.10
 XY_MOVE_TIME_S = 1.50
 PLACE_Z_MOVE_TIME_S = 0.60
-PLACE_RELEASE_DWELL_S = 0.3
 
 # When True, skip all YES confirmations for hands-off execution.
 AUTONOMOUS_MODE = True
@@ -39,7 +38,6 @@ AUTONOMOUS_MODE = True
 # ============================================================
 
 import sys
-import time
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable
@@ -68,8 +66,8 @@ from scripts.pick_one_place_one import (
     STATUS_H_PX,
     CLAW_OPEN_DEG,
     CLAW_CLOSED_DEG,
-    CLAW_SETTLE_S,
     Z_MAX_MM,
+    _command_servo_angle,
     _configure_modules,
     _check_robot_pose_safe,
     _confirm,
@@ -92,6 +90,18 @@ from test_calibration_bundle_live_stereo_z_pickplace import (
     print_matrix_labeled,
     read_command_key,
 )
+
+
+def _resolve_release_servo_angle_deg(held_object: CandidateDebug | None, *, fallback_deg: float) -> tuple[float, str]:
+    if held_object is not None:
+        angle = getattr(held_object.candidate, "initial_servo_angle_deg", None)
+        try:
+            angle_f = float(angle)
+        except (TypeError, ValueError):
+            angle_f = None
+        if angle_f is not None and np.isfinite(angle_f):
+            return angle_f, "held_object.initial_servo_angle_deg"
+    return float(fallback_deg), "fallback_default"
 
 
 def _resolve_held_object_height_and_uncertainty(held_object: CandidateDebug | None) -> tuple[float, float, list[str]]:
@@ -160,6 +170,10 @@ def _execute_place_at_target(
     y = float(target_xy_mm[1])
     phi = float(target_phi_deg)
     travel_z = float(place_plan.approach_z_mm)
+    release_servo_angle_deg, release_servo_source = _resolve_release_servo_angle_deg(
+        held_object,
+        fallback_deg=PLACE_CLAW_OPEN_DEG,
+    )
 
     for label, z in (("travel", travel_z), ("place", place_z), ("retract", float(place_plan.retract_z_mm))):
         reason = validate_z_command(z, f"[PLACE2] {label}")
@@ -183,7 +197,7 @@ def _execute_place_at_target(
     print(f"approach/retract_z_mm = {place_plan.approach_z_mm:.3f}/{place_plan.retract_z_mm:.3f}")
     print(f"warnings = {place_plan.warnings + object_warnings}")
     print(f"target_xy_mm = ({x:.1f}, {y:.1f}) target_phi_deg = {phi:.1f} source = {place_source}")
-    print(f"place_claw_open_deg = {PLACE_CLAW_OPEN_DEG}")
+    print(f"place_claw_open_deg = {release_servo_angle_deg:.2f} source = {release_servo_source}")
 
     require_confirmation = not bool(AUTONOMOUS_MODE)
     if not _confirm("[PLACE2] Real place motion will move to computed adjacent target and open claw.", require_confirmation):
@@ -205,9 +219,9 @@ def _execute_place_at_target(
     if not _move_checked(robot, "[PLACE2] descend", z_mm=place_z, move_time_s=PLACE_Z_MOVE_TIME_S):
         return False
 
-    print(f"[PLACE2] opening claw servo={PLACE_CLAW_OPEN_DEG} (partial release)")
-    robot.servo(PLACE_CLAW_OPEN_DEG)
-    time.sleep(float(PLACE_RELEASE_DWELL_S))
+    print(f"[PLACE2] opening claw servo={release_servo_angle_deg:.2f}")
+    if not _command_servo_angle(robot, release_servo_angle_deg):
+        print("[PLACE2 WARN] failed to command release servo angle.")
 
     if not _move_checked(robot, "[PLACE2] retract", z_mm=float(place_plan.retract_z_mm), move_time_s=COARSE_MOVE_TIME_S):
         return False

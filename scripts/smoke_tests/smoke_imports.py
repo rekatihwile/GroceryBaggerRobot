@@ -257,6 +257,41 @@ def main() -> int:
     if not ok:
         failures += 1
 
+    ok, _ = _try_import(
+        "motion.dynamic_grasp_policy.build_dynamic_pick_plan",
+        lambda: __import__(
+            "motion.dynamic_grasp_policy", fromlist=["build_dynamic_pick_plan"]
+        ).build_dynamic_pick_plan,
+    )
+    if not ok:
+        failures += 1
+
+    ok, _ = _try_import(
+        "hardware.robot.DynamicFirmwareResult",
+        lambda: __import__(
+            "hardware.robot", fromlist=["DynamicFirmwareResult"]
+        ).DynamicFirmwareResult,
+    )
+    if not ok:
+        failures += 1
+
+    ok, _ = _try_import(
+        "hardware.robot.Robot.dynamic_lower_robot_z",
+        lambda: getattr(__import__("hardware.robot", fromlist=["Robot"]).Robot, "dynamic_lower_robot_z"),
+    )
+    if not ok:
+        failures += 1
+
+    ok, _ = _try_import(
+        "scripts.manual_control.validate_fk_teensy_dynamiclower_frame.main",
+        lambda: __import__(
+            "scripts.manual_control.validate_fk_teensy_dynamiclower_frame",
+            fromlist=["main"],
+        ).main,
+    )
+    if not ok:
+        failures += 1
+
     print()
     total = 24
     passed = total - failures

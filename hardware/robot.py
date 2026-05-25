@@ -8,6 +8,7 @@
 
 from dataclasses import dataclass, field
 import math
+import re
 import time
 from pathlib import Path
 
@@ -94,9 +95,13 @@ class RobotConfig:
     j3_zero_to_ee_drop_mm: float = 400.0
 
     # Teensy step values assigned at the physical home pose.
+    # J3 is special in this repo's firmware: after HOME, the controller leaves
+    # the prismatic axis at the lifted pre-home height rather than resetting it
+    # to mechanical-bottom step zero. If home_steps_j3 is omitted, derive it
+    # from home_pose.z_mm so Python FK and direct Teensy J3 mm stay aligned.
     home_steps_j1: int = 0
     home_steps_j2: int = 0
-    home_steps_j3: int = 0
+    home_steps_j3: int | None = None
     home_steps_j4: int = 0
 
     # IK branch. For your old script, elbow_down=False matches theta2 = +acos(...).
@@ -116,6 +121,69 @@ class RobotConfig:
     soft_limits_path: str | None = "config/soft_limits_config.json"
     soft_limits_verbose: bool = True
     soft_limits_strict: bool = True
+
+    def __post_init__(self):
+        if self.home_steps_j3 is None:
+            self.home_steps_j3 = int(round(
+                float(self.j3_sign) * float(self.home_pose.z_mm) * float(self.steps_per_mm_j3)
+            ))
+
+
+@dataclass
+class DynamicFirmwareResult:
+    ok: bool
+    z_empirical_mm: float | None = None
+    servo_empirical_deg: float | None = None
+    raw_lines: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+@dataclass
+class ZCommandTrace:
+    target_robot_z_mm: float
+    current_fk_z_mm: float
+    current_q_est_z_mm: float
+    current_est_j3_steps: int
+    current_est_j3_mm: float
+    current_est_direct_j3_mm: float
+    target_est_j3_steps: int
+    target_est_j3_mm: float
+    target_direct_j3_mm: float
+    actual_steps: tuple[int, int, int, int] | None = None
+    actual_j3_mm: float | None = None
+    actual_direct_j3_mm: float | None = None
+    inferred_robot_to_direct_offset_mm: float | None = None
+    warnings: list[str] = field(default_factory=list)
+
+
+def parse_dynamic_state_lines(lines: list[str]) -> DynamicFirmwareResult:
+    z_empirical_mm: float | None = None
+    servo_empirical_deg: float | None = None
+
+    for raw in lines:
+        line = str(raw).strip()
+        z_match = re.search(r"z_empirical\s*=\s*([-+]?\d+(?:\.\d+)?)", line, re.IGNORECASE)
+        if z_match is not None:
+            try:
+                z_empirical_mm = float(z_match.group(1))
+            except ValueError:
+                pass
+
+        servo_match = re.search(r"servo_empirical\s*=\s*([-+]?\d+(?:\.\d+)?)", line, re.IGNORECASE)
+        if servo_match is not None:
+            try:
+                servo_empirical_deg = float(servo_match.group(1))
+            except ValueError:
+                pass
+
+    ok = (z_empirical_mm is not None) or (servo_empirical_deg is not None)
+    return DynamicFirmwareResult(
+        ok=ok,
+        z_empirical_mm=z_empirical_mm,
+        servo_empirical_deg=servo_empirical_deg,
+        raw_lines=[str(line) for line in lines],
+        error=None if ok else "dynamic_state_not_found",
+    )
 
 
 # ============================================================
@@ -272,6 +340,231 @@ class Robot:
     def servo(self, angle_deg: int):
         self.send(f"SERVO {angle_deg}")
         return self.read_until("SERVO OK", 3.0)
+
+    def dynset(self, key: str, value, timeout_s: float = 3.0) -> bool:
+        if isinstance(value, bool):
+            value_str = "1" if value else "0"
+        elif isinstance(value, int):
+            value_str = str(value)
+        elif isinstance(value, float):
+            value_str = f"{value:.3f}"
+        else:
+            value_str = str(value)
+
+        self.send(f"dynset {key} {value_str}")
+        ok = self.read_until("dynset OK", timeout_s=float(timeout_s))
+
+        # The firmware prints the full dynamic-settings block after acknowledging
+        # the dynset command. Drain that chatter so the next command starts clean.
+        if self.ser:
+            time.sleep(0.05)
+            self.flush()
+        return ok
+
+    def _read_lines_until_done(self, timeout_s: float = 30.0):
+        if not self.ser:
+            return True, [], None
+
+        raw_lines: list[str] = []
+        deadline = time.time() + float(timeout_s)
+        while time.time() < deadline:
+            line = self.ser.readline().decode(errors="replace").strip()
+            if not line:
+                continue
+            raw_lines.append(line)
+            print(f"[Teensy] {line}")
+            if line.startswith("ERR"):
+                return False, raw_lines, line
+            if line == "DONE":
+                return True, raw_lines, None
+        return False, raw_lines, "timeout"
+
+    def set_servo_fractional(self, angle_deg: float) -> bool:
+        self.send(f"servo = {float(angle_deg):.3f}")
+        if not self.ser:
+            return True
+
+        deadline = time.time() + 3.0
+        saw_ack = False
+        saw_err = False
+        while time.time() < deadline:
+            line = self.ser.readline().decode(errors="replace").strip()
+            if not line:
+                continue
+            print(f"[Teensy] {line}")
+            if line.startswith("ERR"):
+                saw_err = True
+                break
+            if ("DONE" in line) or ("# servo ->" in line):
+                saw_ack = True
+                break
+        return saw_ack or not saw_err
+
+    def show_dynamic_state(self) -> DynamicFirmwareResult:
+        self.send("SHOW")
+        if not self.ser:
+            return DynamicFirmwareResult(ok=True, raw_lines=[])
+
+        deadline = time.time() + 3.0
+        raw_lines: list[str] = []
+        while time.time() < deadline:
+            line = self.ser.readline().decode(errors="replace").strip()
+            if not line:
+                continue
+            raw_lines.append(line)
+            print(f"[Teensy] {line}")
+            if line.startswith("ERR"):
+                return DynamicFirmwareResult(ok=False, raw_lines=raw_lines, error=line)
+
+        result = parse_dynamic_state_lines(raw_lines)
+        result.raw_lines = raw_lines
+        return result
+
+    def dynamic_lower(
+        self,
+        z_start_mm,
+        deriv_thresh_ma,
+        n_steps,
+        servo_deg=None,
+        signed_only=False,
+        timeout_s=90,
+    ) -> DynamicFirmwareResult:
+        cmd = (
+            f"DL {float(z_start_mm):.3f} {float(deriv_thresh_ma):.3f} "
+            f"{int(n_steps)}"
+        )
+        if servo_deg is not None:
+            cmd += f" {float(servo_deg):.3f} {1 if signed_only else 0}"
+        self.send(cmd)
+        ok, raw_lines, error = self._read_lines_until_done(timeout_s=float(timeout_s))
+        if not ok:
+            return DynamicFirmwareResult(ok=False, raw_lines=raw_lines, error=error)
+
+        state = self.show_dynamic_state()
+        state.ok = state.ok and ok
+        state.raw_lines = raw_lines + state.raw_lines
+        state.error = state.error if state.error is not None else error
+        return state
+
+    def dynamic_lower_robot_z(
+        self,
+        robot_z_mm,
+        deriv_thresh_ma,
+        n_steps,
+        servo_deg=None,
+        signed_only=False,
+        timeout_s=90,
+    ) -> DynamicFirmwareResult:
+        cmd = (
+            f"DLR {float(robot_z_mm):.3f} {float(deriv_thresh_ma):.3f} "
+            f"{int(n_steps)}"
+        )
+        if servo_deg is not None:
+            cmd += f" {float(servo_deg):.3f} {1 if signed_only else 0}"
+        self.send(cmd)
+        ok, raw_lines, error = self._read_lines_until_done(timeout_s=float(timeout_s))
+        if not ok:
+            return DynamicFirmwareResult(ok=False, raw_lines=raw_lines, error=error)
+
+        state = self.show_dynamic_state()
+        state.ok = state.ok and ok
+        state.raw_lines = raw_lines + state.raw_lines
+        state.error = state.error if state.error is not None else error
+        return state
+
+    def dynamic_grip(
+        self,
+        angle_start_deg,
+        deriv_thresh_ma,
+        n_steps,
+        signed_only=False,
+        timeout_s=45,
+    ) -> DynamicFirmwareResult:
+        cmd = (
+            f"DG {float(angle_start_deg):.3f} {float(deriv_thresh_ma):.3f} "
+            f"{int(n_steps)} {1 if signed_only else 0}"
+        )
+        self.send(cmd)
+        ok, raw_lines, error = self._read_lines_until_done(timeout_s=float(timeout_s))
+        if not ok:
+            return DynamicFirmwareResult(ok=False, raw_lines=raw_lines, error=error)
+
+        state = self.show_dynamic_state()
+        state.ok = state.ok and ok
+        state.raw_lines = raw_lines + state.raw_lines
+        state.error = state.error if state.error is not None else error
+        return state
+
+    def teensy_direct_j3_mm_from_steps(self, j3_steps: int) -> float:
+        return float(j3_steps) / (float(self.cfg.j3_sign) * float(self.cfg.steps_per_mm_j3))
+
+    def robot_z_to_teensy_direct_j3_mm(self, robot_z_mm: float) -> float:
+        home_direct_j3_mm = self.teensy_direct_j3_mm_from_steps(int(self.cfg.home_steps_j3))
+        return float(robot_z_mm) - float(self.cfg.home_pose.z_mm) + float(home_direct_j3_mm)
+
+    def teensy_direct_j3_mm_to_robot_z(self, direct_j3_mm: float) -> float:
+        home_direct_j3_mm = self.teensy_direct_j3_mm_from_steps(int(self.cfg.home_steps_j3))
+        return float(direct_j3_mm) - float(home_direct_j3_mm) + float(self.cfg.home_pose.z_mm)
+
+    def infer_robot_to_direct_z_offset_mm(self, include_actual_pos: bool = True) -> float:
+        direct_j3_mm: float | None = None
+        if include_actual_pos:
+            steps = self.pos_steps()
+            if steps is not None:
+                direct_j3_mm = self.teensy_direct_j3_mm_from_steps(int(steps[2]))
+
+        if direct_j3_mm is None:
+            est_steps = self.joints_to_steps(self.q_est)
+            direct_j3_mm = self.teensy_direct_j3_mm_from_steps(int(est_steps[2]))
+
+        _, _, z_fk, _ = self.fk()
+        return float(z_fk) - float(direct_j3_mm)
+
+    def z_command_trace(self, target_z_mm: float, include_actual_pos: bool = False) -> ZCommandTrace:
+        x_fk, y_fk, z_fk, phi_fk = self.fk()
+        current_steps = self.joints_to_steps(self.q_est)
+        target_q = JointPose(
+            q1_deg=self.q_est.q1_deg,
+            q2_deg=self.q_est.q2_deg,
+            z_mm=float(target_z_mm),
+            phi_deg=self.q_est.phi_deg,
+        )
+        target_steps = self.joints_to_steps(target_q)
+
+        actual_steps = None
+        actual_j3_mm = None
+        actual_direct_j3_mm = None
+        warnings: list[str] = []
+        if include_actual_pos:
+            actual_steps = self.pos_steps()
+            if actual_steps is not None:
+                actual_j3_mm = float(self.steps_to_joints(*actual_steps).z_mm)
+                actual_direct_j3_mm = self.teensy_direct_j3_mm_from_steps(int(actual_steps[2]))
+                if abs(actual_j3_mm - float(z_fk)) > 2.0:
+                    warnings.append("actual_pos_vs_fk_z_mismatch")
+            else:
+                warnings.append("actual_pos_unavailable")
+
+        inferred_offset = None
+        if actual_direct_j3_mm is not None:
+            inferred_offset = float(z_fk) - float(actual_direct_j3_mm)
+
+        return ZCommandTrace(
+            target_robot_z_mm=float(target_z_mm),
+            current_fk_z_mm=float(z_fk),
+            current_q_est_z_mm=float(self.q_est.z_mm),
+            current_est_j3_steps=int(current_steps[2]),
+            current_est_j3_mm=float(self.steps_to_joints(0, 0, current_steps[2], 0).z_mm),
+            current_est_direct_j3_mm=self.teensy_direct_j3_mm_from_steps(int(current_steps[2])),
+            target_est_j3_steps=int(target_steps[2]),
+            target_est_j3_mm=float(self.steps_to_joints(0, 0, target_steps[2], 0).z_mm),
+            target_direct_j3_mm=self.robot_z_to_teensy_direct_j3_mm(float(target_z_mm)),
+            actual_steps=actual_steps,
+            actual_j3_mm=actual_j3_mm,
+            actual_direct_j3_mm=actual_direct_j3_mm,
+            inferred_robot_to_direct_offset_mm=inferred_offset,
+            warnings=warnings,
+        )
 
     def pos_steps(self):
         self.send("POS")
