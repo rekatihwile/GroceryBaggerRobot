@@ -32,7 +32,7 @@ DETECT_STEREO_RIGHT = False
 CONTINUOUS_YOLO            = False   # False = press SPACE to run detections
 RUN_YOLO_ON_STARTUP_FRAME  = False
 
-YOLO_WEIGHTS_PATH          = Path("yolo_weights/Validate_Only_100_Training_Best.pt")
+YOLO_WEIGHTS_PATH          = Path("yolo_weights/full_data.pt")
 YOLO_FALLBACK_WEIGHTS_PATH = Path("best.pt")
 
 YOLO_IMGSZ       = 640

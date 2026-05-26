@@ -210,6 +210,18 @@
     float dyn_deriv_pattern_sum_grip_ma    = 1500.0f;  // grip trigger if all-positive sum over lookback exceeds this
     float dyn_deriv_pattern_sum_lower_ma   = 50.0f;  // lower trigger if all-positive sum over lookback exceeds this
 
+    // StallGuard stall detection (J3 only, inside dynamicLower).
+    // Tuning workflow:
+    //   1) Run SGSTREAM with motors enabled, J3 free.
+    //   2) Note baseline SG_RESULT (typically 150-300 during slow free descent).
+    //   3) Push down on the gripper by hand. Note loaded value.
+    //   4) Jam J3 against a stop. Note stalled value (usually < 50).
+    //   5) Set dyn_sg_threshold somewhere between "loaded" and "free", closer to loaded.
+    //   SG_RESULT is speed-dependent — retune if dyn_lower_speed_mm_s_runtime changes.
+    bool          dyn_sg_enabled       = true;   // SG stall check active in dynamicLower
+    int           dyn_sg_threshold     = 30;     // SG_RESULT below this = stall (tune in lab)
+    unsigned long dyn_sg_blackout_ms   = 300;    // ignore SG for this long after descent starts
+
     // Idle streaming sample period (slower than dynamic ops to keep monitor readable).
     const unsigned long IDLE_STREAM_PERIOD_MS = 50;  // 20 Hz
 
@@ -345,6 +357,7 @@
         setupDriver(driver1, 1400);
         setupDriver(driver2, 1700);
         setupDriver(driver3, J3_RUN_CURRENT_MA);
+        driver3.TCOOLTHRS(0xFFFFF);  // enable StallGuard at all relevant speeds for J3
         setupDriver(driver4, 2000);
     }
 
@@ -867,12 +880,13 @@
         Serial.print(",PctRise:");    Serial.println(pctRise, 2);
     }
 
-    void plotterDeriv(float c, float deriv, float threshold, int consec)
+    void plotterDeriv(float c, float deriv, float threshold, int consec, int sg)
     {
         Serial.print("Current_mA:"); Serial.print(c,       2);
         Serial.print(",Deriv:");     Serial.print(deriv,    2);
         Serial.print(",Thresh:");    Serial.print(threshold, 2);
-        Serial.print(",Consec:");    Serial.println(consec);
+        Serial.print(",Consec:");    Serial.print(consec);
+        Serial.print(",SG:");        Serial.println(sg);
     }
 
     // ============================================================
@@ -1097,7 +1111,7 @@
             if (isnan(c_prev))
             {
                 c_prev = c;
-                plotterDeriv(c, 0.0f, deriv_threshold, 0);
+                plotterDeriv(c, 0.0f, deriv_threshold, 0, -1);
                 angle -= dyn_grip_deg_per_sample_runtime;
                 writeServoFractional(angle);
                 continue;
@@ -1139,7 +1153,7 @@
                 pattern_hit = all_pos && (sum > dyn_deriv_pattern_sum_grip_ma);
             }
 
-            plotterDeriv(c, deriv, deriv_threshold, consec);
+            plotterDeriv(c, deriv, deriv_threshold, consec, -1);
 
             if (consec >= N_steps || pattern_hit)
             {
@@ -1259,16 +1273,42 @@
                 return current_mm;
             }
 
+
             unsigned long now = millis();
             if ((long)(now - next_sample) < 0) continue;
             next_sample = now + DYN_SAMPLE_PERIOD_MS;
+            // DELETE the existing SG block that sits above the next_sample gate.
+
+
+            // INSERT here (between the gate and the INA219 read):
+            if (dyn_sg_enabled && (now - t_start) > dyn_sg_blackout_ms)
+            {
+                uint16_t sg = driver3.SG_RESULT();
+                if (sg < (uint16_t)dyn_sg_threshold)
+                {
+                    J3.setSpeed(0); holdAxisHere(J3);
+                    Serial.print("# Trigger source: stallguard (SG_RESULT=");
+                    Serial.print(sg); Serial.print(" < "); Serial.print(dyn_sg_threshold); Serial.println(")");
+                    float final_mm = j3StepsToMm(J3.currentPosition());
+                    Serial.print("# CONTACT detected at J3 = ");
+                    Serial.print(final_mm, 2); Serial.println(" mm");
+                    z_empirical_mm = zEmpiricalFromContactAndServo(final_mm, currentServoAngleDeg);
+                    Serial.print("# Comp using servo angle ");
+                    Serial.print(currentServoAngleDeg, 2); Serial.println(" deg");
+                    Serial.print("# Stored z_empirical = ");
+                    Serial.print(z_empirical_mm, 2); Serial.println(" mm");
+                    return final_mm;
+                }
+            }
+
+   
 
             float c = ina219.getCurrent_mA();
 
             if (isnan(c_prev))
             {
                 c_prev = c;
-                plotterDeriv(c, 0.0f, deriv_threshold, 0);
+                plotterDeriv(c, 0.0f, deriv_threshold, 0, (int)driver3.SG_RESULT());
                 continue;
             }
 
@@ -1308,7 +1348,7 @@
                 pattern_hit = all_pos && (sum > dyn_deriv_pattern_sum_lower_ma);
             }
 
-            plotterDeriv(c, deriv, deriv_threshold, consec);
+            plotterDeriv(c, deriv, deriv_threshold, consec, (int)driver3.SG_RESULT());
 
             if (consec >= N_steps || pattern_hit)
             {
@@ -1388,6 +1428,12 @@
         Serial.println("#   Aliases: DL / DG");
         Serial.println("#   Defaults are from dynset (DG uses dg_start_deg; DL uses dl_start_mm).");
         Serial.println("#   Cancel: send any line (just press Enter).");
+        Serial.println("#");
+        Serial.println("# Stall detection (J3, dynamicLower only):");
+        Serial.println("#   SGSTREAM | SG?          live SG_RESULT stream for calibration (push J3 by hand)");
+        Serial.println("#   dynset sg_enabled <0|1>       toggle StallGuard trigger in dynamiclower");
+        Serial.println("#   dynset sg_threshold <0..510>  trigger when SG_RESULT drops below this");
+        Serial.println("#   dynset sg_blackout_ms <ms>    ignore SG for first N ms of descent");
         Serial.println("#");
         Serial.println("# Telemetry / state:");
         Serial.println("#   SHOW                    print stored empirical values and current pose");
@@ -1472,6 +1518,11 @@
         Serial.print("#   pattern_nonzero_n      = "); Serial.println(dyn_deriv_pattern_nonzero_n);
         Serial.print("#   pattern_sum_grip_ma    = "); Serial.println(dyn_deriv_pattern_sum_grip_ma, 3);
         Serial.print("#   pattern_sum_lower_ma   = "); Serial.println(dyn_deriv_pattern_sum_lower_ma, 3);
+
+        Serial.println("# StallGuard settings (J3, dynamicLower only):");
+        Serial.print("#   sg_enabled        = "); Serial.println(dyn_sg_enabled ? 1 : 0);
+        Serial.print("#   sg_threshold      = "); Serial.println(dyn_sg_threshold);
+        Serial.print("#   sg_blackout_ms    = "); Serial.println(dyn_sg_blackout_ms);
     }
 
     void handleDynSet(String rest)
@@ -1497,7 +1548,7 @@
 
         float f;
         if (key == "dg_start_deg")
-        {
+            {
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset dg_start_deg"); return; }
             dyn_default_dg_start_deg = constrain(f, SERVO_ANGLE_MIN_DEG, SERVO_ANGLE_MAX_DEG);
         }
@@ -1596,6 +1647,21 @@
             dyn_deriv_pattern_sum_grip_ma = f;
             dyn_deriv_pattern_sum_lower_ma = f;
         }
+        else if (key == "sg_enabled")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset sg_enabled"); return; }
+            dyn_sg_enabled = (f != 0.0f);
+        }
+        else if (key == "sg_threshold")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset sg_threshold"); return; }
+            dyn_sg_threshold = constrain((int)f, 0, 510);
+        }
+        else if (key == "sg_blackout_ms")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset sg_blackout_ms"); return; }
+            dyn_sg_blackout_ms = (unsigned long)max(0.0f, f);
+        }
         else
         {
             Serial.print("# ERR dynset: unknown key '"); Serial.print(key); Serial.println("'");
@@ -1604,6 +1670,35 @@
 
         Serial.println("# dynset OK");
         printDynamicSettings();
+    }
+
+    // ============================================================
+    //  NEW: SGSTREAM — live SG_RESULT stream for StallGuard calibration
+    // ============================================================
+
+    void handleSgStream()
+    {
+        
+        Serial.println("# SG stream: push on J3 by hand to calibrate. Send any line to stop.");
+        unsigned long next_sample = millis();
+        while (true)
+        {
+            if (drainSerialAsCancel())
+            {
+                Serial.println("# SG stream stopped.");
+                return;
+            }
+            unsigned long now = millis();
+            if ((long)(now - next_sample) < 0) continue;
+            next_sample = now + 50;  // 20 Hz
+            uint16_t sg = driver3.SG_RESULT();
+            uint8_t  ver = driver3.version();      // <-- add this
+            uint8_t  ifc = driver3.IFCNT();        // <-- and this
+            Serial.print("SG:"); Serial.print(sg);
+            Serial.print(",Ver:0x"); Serial.print(ver, HEX);
+            Serial.print(",IFCNT:"); Serial.print(ifc);
+            Serial.print(",Thresh:"); Serial.println(dyn_sg_threshold);
+        }
     }
 
     // ============================================================
@@ -1710,6 +1805,7 @@
         }
         if (cmd == "stream on")           { stream_idle = true;  Serial.println("# STREAM ON");  return; }
         if (cmd == "stream off")          { stream_idle = false; Serial.println("# STREAM OFF"); return; }
+        if (cmd == "sgstream" || cmd == "sg?") { handleSgStream(); return; }
         if (cmd.startsWith("set_l_preset"))
         {
             String rest = cmd.substring(12);

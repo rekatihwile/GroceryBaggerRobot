@@ -17,7 +17,7 @@ from vision.raft_runner import RAFTStereoRunner
 from vision.yolo_segmenter import YOLODetection, YOLOSegmenter
 
 
-YOLO_WEIGHTS_PATH = Path("yolo_weights/Validate_Only_100_Training_Best.pt")
+YOLO_WEIGHTS_PATH = Path("yolo_weights/full_data.pt")
 YOLO_FALLBACK_WEIGHTS_PATH = Path("yolo_weights/validate_V2.pt")
 RAFT_ROOT = Path("RAFT-Stereo")
 RAFT_CHECKPOINT_PATH = Path("RAFT-Stereo/models/raftstereo-middlebury.pth")

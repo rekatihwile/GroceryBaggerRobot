@@ -15,8 +15,10 @@ Differences from run_pickplace_fast.py:
   4. Simplified Z policy:
         travel_z = Z_MAX_MM
         hover_z  = Z_MAX_MM
-        grasp_z  = z_stereo + GRIPPER_OFFSET_MM (+50 for short items)
-        place_z  = BAG_FLOOR_GRIPPER_Z_MM + stack + item_height + gap
+        grasp_z  = max(z_stereo + GRIPPER_OFFSET_MM (+50 for short items),
+                       MIN_PICK_GRASP_Z_MM)
+        place_z  = max(BAG_FLOOR_GRIPPER_Z_MM + stack_rect + item_height
+                       + padding + gap, MIN_PLACE_Z_MM)
      Validated up front in execute_place_blb so a bad plan never starts motion.
   5. Auto-cycle test mode ('a') picks-and-places every surveyed candidate
      in scored order, tracks holding state so user can retry on partial fail.
@@ -50,6 +52,20 @@ from __future__ import annotations
 
 # --- Calibration ---
 from pathlib import Path
+from motion.z_safety_config import (
+    DEFAULT_Z_SAFETY,
+    GRIPPER_OFFSET_MM as SHARED_GRIPPER_OFFSET_MM,
+    MIN_PICK_GRASP_Z_MM as SHARED_MIN_PICK_GRASP_Z_MM,
+    MIN_PLACE_ITEM_HEIGHT_MM as SHARED_MIN_PLACE_ITEM_HEIGHT_MM,
+    MIN_PLACE_Z_MM as SHARED_MIN_PLACE_Z_MM,
+    PLACE_RELEASE_GAP_MM as SHARED_PLACE_RELEASE_GAP_MM,
+    PLACE_STACK_QUERY_INFLATE_CM as SHARED_PLACE_STACK_QUERY_INFLATE_CM,
+    PLACE_Z_SAFETY_PADDING_MM as SHARED_PLACE_Z_SAFETY_PADDING_MM,
+    PLATFORM_MIN_GRIPPER_Z_MM as SHARED_PLATFORM_MIN_GRIPPER_Z_MM,
+    Z_MAX_MM as SHARED_Z_MAX_MM,
+    print_z_safety_settings,
+    validate_z_command,
+)
 
 BUNDLE_PATH = Path("robot_calibration_bundle.npz")
 STEREO_CALIBRATION_PATH = Path("stereo_calibration.npz")
@@ -81,8 +97,22 @@ USE_POINTCLOUD_SIZE_BLEND: bool = True
 POINTCLOUD_SIZE_BLEND_WEIGHT: float = 0.75
 
 # --- Z geometry (PICK / HOVER / TRAVEL) ---
-Z_MAX_MM: float = 250
-GRIPPER_OFFSET_MM: float = 100
+# Shared real-robot aliases. Edit motion/z_safety_config.py, not each script.
+# Robot Z is the commanded J3/EE robot coordinate.
+Z_MAX_MM: float = SHARED_Z_MAX_MM
+GRIPPER_OFFSET_MM: float = SHARED_GRIPPER_OFFSET_MM
+
+# Absolute lower bounds for pick/place Z.  PLATFORM_MIN_GRIPPER_Z_MM is the
+# minimum robot Z allowed during pick/place even if stereo or bag geometry is bad.
+PLATFORM_MIN_GRIPPER_Z_MM: float = SHARED_PLATFORM_MIN_GRIPPER_Z_MM
+MIN_PICK_GRASP_Z_MM: float = SHARED_MIN_PICK_GRASP_Z_MM
+MIN_PLACE_Z_MM: float = SHARED_MIN_PLACE_Z_MM
+
+# Conservative placement Z padding.  Flat pointclouds can report tiny heights,
+# so placement uses at least MIN_PLACE_ITEM_HEIGHT_MM plus this extra air gap.
+MIN_PLACE_ITEM_HEIGHT_MM: float = SHARED_MIN_PLACE_ITEM_HEIGHT_MM
+PLACE_Z_SAFETY_PADDING_MM: float = SHARED_PLACE_Z_SAFETY_PADDING_MM
+PLACE_STACK_QUERY_INFLATE_CM: float = SHARED_PLACE_STACK_QUERY_INFLATE_CM
 
 # Compatibility shim for vision.object_geometry.
 HOVER_HEIGHT_MM: float = Z_MAX_MM
@@ -119,11 +149,12 @@ BAG_WIDTH_MM: float = 1000 # bag extent along robot +X axis
 BAG_DEPTH_MM: float =1000  # bag extent along robot +Y axis
 
 # --- Z geometry (PLACE side) ---
-# Robot Z at which the EMPTY gripper tip just touches the empty bag floor.
-# Calibrate once: lower the empty gripper into the empty bag until the tip
-# kisses the floor, then read FK Z and put that number here.
+# BAG_FLOOR_GRIPPER_Z_MM is robot Z when the EMPTY gripper tip just touches the
+# empty bag floor/platform.  Calibrate once: lower the empty gripper into the
+# empty bag until the tip kisses the floor, then read FK Z and put that number
+# here.
 BAG_FLOOR_GRIPPER_Z_MM: float = 0       # <-- CALIBRATE
-PLACE_RELEASE_GAP_MM: float = 1.0
+PLACE_RELEASE_GAP_MM: float = SHARED_PLACE_RELEASE_GAP_MM
 BAG_PLACE_PHI_DEG: float | None = None
 
 # --- Motion ---
@@ -204,7 +235,14 @@ from vision.survey import run_survey_workspace
 from planning.grocery_item import GroceryItem
 from planning.bag_state import BagState, PlacedItem
 from planning.planner_2d_blb import choose_placement_spot_2d
-
+from motion.pick_z_policy import PickZPlan, compute_pick_z_plan
+from motion.place_z_policy import PlaceZPlan, compute_place_z_plan
+from motion.pick_place_sequence import (
+    PickSequenceSettings,
+    PlaceSequenceSettings,
+    execute_pick_sequence,
+    execute_place_sequence,
+)
 from config.camera_config import OVERHEAD_INDEX, STEREO_INDEX
 from hardware.cameras.overhead_camera import SimpleOverheadCamera
 from hardware.cameras.stereo_apriltag_viewer import SimpleStereoCamera, build_detector
@@ -657,40 +695,24 @@ def _clamp_candidate_z_floor(cand: ObjectCandidate) -> None:
 # Pick-side Z helpers
 # ============================================================
 
-def _compute_grasp_robot_z(cand: ObjectCandidate) -> float:
-    """Compute grasp Z from stereo surface Z and measured object height.
-
-    Convention:
-        gripper_tip_Z = robot_Z - GRIPPER_OFFSET_MM
-
-    Tall items: tip at stereo Z (z_stereo).
-    Short or unknown-height items: add a +50 mm buffer so the fingers have
-    room to close around the object without bottoming out on the table.
-    """
+def _build_pick_z_plan(cand: ObjectCandidate) -> PickZPlan:
+    """Build the shared pick Z plan from stereo surface Z and object height."""
     z_stereo = float(cand.object_robot_xyz_raw[2])
     item_height_cm = cand.pointcloud_height_cm
     item_height_mm = (
         None if item_height_cm is None else float(item_height_cm) * 10.0
     )
-
-    if item_height_mm is None or item_height_mm < 50.0:
-        grasp_z = z_stereo + GRIPPER_OFFSET_MM + 50.0
-        regime = "short/unknown(+50mm buffer)"
-    else:
-        grasp_z = z_stereo + GRIPPER_OFFSET_MM
-        regime = "tall"
-
-    h_str = "None" if item_height_mm is None else f"{item_height_mm:.1f} mm"
-    print(
-        f"[GRASP Z] cand[{cand.index}] z_stereo={z_stereo:7.1f} mm  "
-        f"item_h={h_str:>9s}  regime={regime:24s}  "
-        f"-> grasp_z={grasp_z:7.1f} mm"
+    return compute_pick_z_plan(
+        object_surface_z_mm=z_stereo,
+        object_height_mm=item_height_mm,
+        candidate=cand,
+        config=DEFAULT_Z_SAFETY,
     )
 
-    if grasp_z < 0.0:
-        print(f"[GRASP Z] WARNING: computed {grasp_z:.1f} mm < 0; clamping to 0")
-        return 0.0
-    return float(grasp_z)
+
+def _compute_grasp_robot_z(cand: ObjectCandidate) -> float:
+    """Compatibility wrapper around the shared pick Z policy."""
+    return float(_build_pick_z_plan(cand).final_grasp_z_mm)
 
 
 def _apply_simple_pick_z(cand: ObjectCandidate) -> None:
@@ -746,7 +768,6 @@ def _reapply_overhead_xy(
         [target_xy[0], target_xy[1], stereo_z], dtype=np.float64
     )
     cand.hover_robot_z = float(Z_MAX_MM)
-    cand.grasp_robot_z = stereo_z + float(GRIPPER_OFFSET_MM)
     cand.stereo_z_bias_mm = 0.0
 
 
@@ -758,47 +779,36 @@ def _compute_place_robot_z(
     item: GroceryItem,
     bag_state: BagState,
     spot,
-) -> tuple[float, float, float, str]:
-    """Compute robot Z to release `item` at (spot.x, spot.y) in bag coords.
+) -> PlaceZPlan:
+    """Compute shared place Z plan for `item` at (spot.x, spot.y) in bag coords.
 
     Convention (must match _compute_grasp_robot_z):
         gripper_tip_Z = robot_Z - GRIPPER_OFFSET_MM
         BAG_FLOOR_GRIPPER_Z_MM = robot_Z when EMPTY gripper tip is at bag floor.
 
-    Releasing an item so its bottom lands at (floor + stack + gap), with the
-    item held near its top so it dangles ~item_height below the tip:
-        robot_Z = BAG_FLOOR_GRIPPER_Z_MM + stack_top + item_height + gap
+    Releasing an item so its bottom lands above the stack, with the item held
+    near its top so it dangles ~item_height below the tip:
+        robot_Z = BAG_FLOOR_GRIPPER_Z_MM + stack_rect + item_height
+                  + safety_padding + gap
     The tip-vs-robot offset is already baked into the calibrated
     BAG_FLOOR_GRIPPER_Z_MM, so it does NOT appear again here.
     """
-    item_height_mm = _item_height_mm(item)
-    stack_top_mm = bag_state.stack_height_at_mm(spot.x, spot.y)
-    place_z = (
-        BAG_FLOOR_GRIPPER_Z_MM
-        + stack_top_mm
-        + item_height_mm
-        + PLACE_RELEASE_GAP_MM
+    raw_item_height_mm = _item_height_mm(item)
+    return compute_place_z_plan(
+        destination_floor_or_surface_z_mm=BAG_FLOOR_GRIPPER_Z_MM,
+        object_height_mm=raw_item_height_mm,
+        bag_state=bag_state,
+        x_cm=spot.x,
+        y_cm=spot.y,
+        w_cm=item.padded_rect_xy_cm[0],
+        d_cm=item.padded_rect_xy_cm[1],
+        config=DEFAULT_Z_SAFETY,
     )
-    debug = (
-        f"floor({BAG_FLOOR_GRIPPER_Z_MM:.1f}) + stack({stack_top_mm:.1f}) "
-        f"+ item({item_height_mm:.1f}) + gap({PLACE_RELEASE_GAP_MM:.1f}) "
-        f"= {place_z:.1f} mm"
-    )
-    return place_z, item_height_mm, stack_top_mm, debug
 
 
 def _validate_z_command(z_mm: float, label: str) -> str | None:
     """Return None if z_mm is a safe robot Z to command, else a reason string."""
-    if not np.isfinite(z_mm):
-        return f"{label} z={z_mm} is not finite"
-    if z_mm < 0.0:
-        return (
-            f"{label} z={z_mm:.1f} mm < 0. "
-            f"BAG_FLOOR_GRIPPER_Z_MM={BAG_FLOOR_GRIPPER_Z_MM:.1f} likely needs calibration."
-        )
-    if z_mm > Z_MAX_MM + 1e-6:
-        return f"{label} z={z_mm:.1f} mm > Z_MAX_MM={Z_MAX_MM:.1f}"
-    return None
+    return validate_z_command(z_mm, label, config=DEFAULT_Z_SAFETY)
 
 
 # ============================================================
@@ -1101,20 +1111,11 @@ def execute_pick(robot: Robot, candidate: ObjectCandidate) -> bool:
     """Full pick sequence."""
     _hr("PICK", "-")
     x, y = float(candidate.target_xy[0]), float(candidate.target_xy[1])
-    hover_z = float(candidate.hover_robot_z)
     pointcloud_z = float(candidate.object_robot_xyz_raw[2])
-    cx, cy, cz, _ = robot.fk()
-    grasp_z = _compute_grasp_robot_z(candidate)
+    pick_plan = _build_pick_z_plan(candidate)
+    grasp_z = float(pick_plan.final_grasp_z_mm)
     candidate.grasp_robot_z = float(grasp_z)
     phi = _candidate_phi_or_current(robot, candidate)
-    travel_z = _choose_safe_travel_z(cz, hover_z)
-
-    # Validate everything before any motion
-    for label, z in (("travel", travel_z), ("hover", hover_z), ("grasp", grasp_z)):
-        reason = _validate_z_command(z, f"[PICK] {label}")
-        if reason is not None:
-            print(f"[PICK] ABORT (no motion issued): {reason}")
-            return False
 
     if REFUSE_PICK_IF_TOO_FEW_POINTS and candidate.valid_point_count < MIN_VALID_OBJECT_POINTS:
         print(f"[PICK] REFUSE: only {candidate.valid_point_count} valid points < {MIN_VALID_OBJECT_POINTS}")
@@ -1132,41 +1133,28 @@ def execute_pick(robot: Robot, candidate: ObjectCandidate) -> bool:
         f"xy=({x:.1f},{y:.1f})  phi={phi:+6.1f} ({candidate.pick_phi_source})"
     )
     print(
-        f"[PICK] z plan:  travel={travel_z:.1f}  hover={hover_z:.1f}  "
-        f"grasp={grasp_z:.1f}  (z_stereo={pointcloud_z:.1f} + offset={GRIPPER_OFFSET_MM:.1f})"
+        f"[PICK] z plan:  approach={pick_plan.approach_z_mm:.1f}  "
+        f"grasp={grasp_z:.1f}  retract={pick_plan.retract_z_mm:.1f}  "
+        f"(z_stereo={pointcloud_z:.1f}, raw_grasp={pick_plan.raw_grasp_z_mm:.1f})"
     )
     print(f"[PICK] quality: pts={candidate.valid_point_count}  support={candidate.support_distance_mm:.1f}mm")
 
-    robot.servo(CLAW_OPEN_DEG)
-    time.sleep(CLAW_SETTLE_S)
-    print(f"[PICK] claw open ({CLAW_OPEN_DEG}°)")
-
-    if not move_cartesian_nonnegative_z(robot, "[PICK] raise", z_mm=travel_z, move_time_s=COARSE_MOVE_TIME_S):
-        return False
-    _print_motion_verify(robot, "[PICK] raise verify", target_z=travel_z)
-
-    if not move_cartesian_nonnegative_z(robot, "[PICK] XY+phi", x_mm=x, y_mm=y, phi_deg=phi, move_time_s=COARSE_MOVE_TIME_S):
-        return False
-    _print_motion_verify(robot, "[PICK] XY+phi verify", target_x=x, target_y=y, target_phi=phi)
-
-    if not move_cartesian_nonnegative_z(robot, "[PICK] hover", z_mm=hover_z, move_time_s=PICK_MOVE_TIME_S):
-        return False
-    _print_motion_verify(robot, "[PICK] hover verify", target_z=hover_z)
-
-    if not move_cartesian_nonnegative_z(robot, "[PICK] grasp", z_mm=grasp_z, move_time_s=PICK_MOVE_TIME_S):
-        return False
-    _print_motion_verify(robot, "[PICK] grasp verify", target_z=grasp_z)
-
-    robot.servo(CLAW_CLOSED_DEG)
-    time.sleep(CLAW_SETTLE_S)
-    print(f"[PICK] claw closed ({CLAW_CLOSED_DEG}°)")
-
-    if not move_cartesian_nonnegative_z(robot, "[PICK] raise after grasp", z_mm=hover_z, move_time_s=PICK_MOVE_TIME_S):
-        return False
-    _print_motion_verify(robot, "[PICK] raise verify", target_z=hover_z)
-
-    print("[PICK] OK — item should be in gripper.")
-    return True
+    return execute_pick_sequence(
+        robot,
+        candidate,
+        target_xy_mm=np.array([x, y], dtype=np.float64),
+        target_phi_deg=phi,
+        pick_z_plan=pick_plan,
+        settings=PickSequenceSettings(
+            claw_open_deg=CLAW_OPEN_DEG,
+            claw_closed_deg=CLAW_CLOSED_DEG,
+            coarse_move_time_s=COARSE_MOVE_TIME_S,
+            z_move_time_s=PICK_MOVE_TIME_S,
+            claw_settle_s=CLAW_SETTLE_S,
+        ),
+        config=DEFAULT_Z_SAFETY,
+        label_prefix="[PICK]",
+    )
 
 
 def execute_place_blb(
@@ -1203,62 +1191,36 @@ def execute_place_blb(
         if BAG_PLACE_PHI_DEG is not None
         else _candidate_phi_or_current(robot, candidate)
     )
-    place_z, item_height_mm, stack_top_mm, place_debug = _compute_place_robot_z(
-        item, bag_state, spot
-    )
-    hover_z = float(Z_MAX_MM)
-    cx, cy, cz, _ = robot.fk()
-    travel_z = _choose_safe_travel_z(cz, hover_z)
+    place_plan = _compute_place_robot_z(item, bag_state, spot)
+    place_z = float(place_plan.final_release_z_mm)
 
     print(
         f"[PLACE] BLB spot bag=({spot.x:5.1f},{spot.y:5.1f}) cm  "
         f"-> robot=({place_x:7.1f},{place_y:7.1f}) mm  phi={place_phi:+6.1f}"
     )
-    print(f"[PLACE] z plan: {place_debug}")
-    print(f"[PLACE] hover_z={hover_z:.1f}  travel_z={travel_z:.1f}")
+    print(f"[PLACE] z plan: {place_plan.debug}")
+    print(f"[PLACE] approach_z={place_plan.approach_z_mm:.1f}  retract_z={place_plan.retract_z_mm:.1f}")
     print(
         f"[PLACE] bag state before: {len(bag_state.placed_items)} item(s), "
         f"{bag_state.free_area_estimate_cm2():.0f} cm² free"
     )
 
-    # --- Validate ALL Z targets before any motion ---
-    for label, z in (("travel", travel_z), ("hover", hover_z), ("place", place_z)):
-        reason = _validate_z_command(z, f"[PLACE] {label}")
-        if reason is not None:
-            print(f"[PLACE] ABORT (no motion issued, item still held): {reason}")
-            return False, None
-
-    # --- Execute motion sequence ---
-    if not move_cartesian_nonnegative_z(robot, "[PLACE] raise", z_mm=travel_z, move_time_s=COARSE_MOVE_TIME_S):
-        return False, None
-    _print_motion_verify(robot, "[PLACE] raise verify", target_z=travel_z)
-
-    if not move_cartesian_nonnegative_z(
-        robot, "[PLACE] XY+phi",
-        x_mm=place_x, y_mm=place_y, phi_deg=place_phi,
-        move_time_s=COARSE_MOVE_TIME_S,
+    if not execute_place_sequence(
+        robot,
+        candidate,
+        target_xy_mm=np.array([place_x, place_y], dtype=np.float64),
+        target_phi_deg=place_phi,
+        place_z_plan=place_plan,
+        settings=PlaceSequenceSettings(
+            release_servo_deg=CLAW_OPEN_DEG,
+            coarse_move_time_s=COARSE_MOVE_TIME_S,
+            z_move_time_s=PICK_MOVE_TIME_S,
+            claw_settle_s=CLAW_SETTLE_S,
+        ),
+        config=DEFAULT_Z_SAFETY,
+        label_prefix="[PLACE]",
     ):
         return False, None
-    _print_motion_verify(robot, "[PLACE] XY+phi verify", target_x=place_x, target_y=place_y, target_phi=place_phi)
-
-    if not move_cartesian_nonnegative_z(robot, "[PLACE] hover", z_mm=hover_z, move_time_s=COARSE_MOVE_TIME_S):
-        return False, None
-    _print_motion_verify(robot, "[PLACE] hover verify", target_z=hover_z)
-
-    if not move_cartesian_nonnegative_z(robot, "[PLACE] lower", z_mm=place_z, move_time_s=PICK_MOVE_TIME_S):
-        return False, None
-    _print_motion_verify(robot, "[PLACE] lower verify", target_z=place_z)
-
-    robot.servo(CLAW_OPEN_DEG)
-    time.sleep(CLAW_SETTLE_S)
-    print(f"[PLACE] claw opened ({CLAW_OPEN_DEG}°) — item released")
-
-    if not move_cartesian_nonnegative_z(
-        robot, "[PLACE] raise after release",
-        z_mm=hover_z, move_time_s=PICK_MOVE_TIME_S,
-    ):
-        return False, None
-    _print_motion_verify(robot, "[PLACE] raise verify", target_z=hover_z)
 
     placed = bag_state.add(item, spot.x, spot.y)
     print(
@@ -1484,6 +1446,7 @@ def main() -> None:  # noqa: C901
     print(f"[MAIN] pick phi mode: {PICK_PHI_MODE}")
     print(f"[MAIN] Z policy: Z_MAX={Z_MAX_MM}  GRIPPER_OFFSET={GRIPPER_OFFSET_MM}  "
           f"BAG_FLOOR_GRIPPER_Z={BAG_FLOOR_GRIPPER_Z_MM}")
+    print_z_safety_settings("[MAIN] Z safety", config=DEFAULT_Z_SAFETY)
     print(f"[MAIN] bag: origin=({BAG_ORIGIN_X_MM},{BAG_ORIGIN_Y_MM}) mm  "
           f"size={BAG_WIDTH_MM}x{BAG_DEPTH_MM} mm")
     print(f"[MAIN] XY blend: overhead_weight={OVERHEAD_XY_BLEND_WEIGHT}  "
@@ -1527,9 +1490,15 @@ def main() -> None:  # noqa: C901
         _hr("CALIBRATION WARNING", "!")
         print(
             "[WARN] BAG_FLOOR_GRIPPER_Z_MM is 0 — looks like the placeholder,\n"
-            "       not a calibrated value. Place moves will abort until calibrated.\n"
+            "       not a calibrated value. Placement Z will be clamped by the\n"
+            "       minimum platform safety settings, but release height may be wrong.\n"
             "       To calibrate: lower the EMPTY gripper tip to the empty bag floor,\n"
             "       read FK Z (press 'p'), and set BAG_FLOOR_GRIPPER_Z_MM to that value."
+        )
+        print(
+            f"       PLATFORM_MIN_GRIPPER_Z_MM={PLATFORM_MIN_GRIPPER_Z_MM:.1f}  "
+            f"MIN_PLACE_ITEM_HEIGHT_MM={MIN_PLACE_ITEM_HEIGHT_MM:.1f}  "
+            f"PLACE_Z_SAFETY_PADDING_MM={PLACE_Z_SAFETY_PADDING_MM:.1f}"
         )
         _hr("", "!")
 

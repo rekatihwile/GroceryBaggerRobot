@@ -99,6 +99,46 @@ class BagState:
                 stack_top_cm = max(stack_top_cm, placed.z + placed.h)
         return stack_top_cm * 10.0
 
+    def stack_height_under_rect_mm(
+        self,
+        x_cm: float,
+        y_cm: float,
+        w_cm: float,
+        d_cm: float,
+        inflate_cm: float = 0.0,
+    ) -> float:
+        """Return max stack height under an inflated query rectangle, in mm.
+
+        This is intentionally conservative for placement Z: any placed item
+        whose footprint overlaps the inflated query rectangle contributes its
+        top height (placed.z + placed.h).
+        """
+        w = float(w_cm)
+        d = float(d_cm)
+        if w <= 0.0 or d <= 0.0:
+            return 0.0
+
+        inflate = max(0.0, float(inflate_cm))
+        query_x = float(x_cm) - inflate
+        query_y = float(y_cm) - inflate
+        query_w = w + 2.0 * inflate
+        query_d = d + 2.0 * inflate
+
+        stack_top_cm = 0.0
+        for placed in self.placed_items:
+            if _rects_overlap(
+                query_x,
+                query_y,
+                query_w,
+                query_d,
+                placed.x,
+                placed.y,
+                placed.w,
+                placed.d,
+            ):
+                stack_top_cm = max(stack_top_cm, float(placed.z) + float(placed.h))
+        return stack_top_cm * 10.0
+
     # ------------------------------------------------------------------ #
     # Mutation
     # ------------------------------------------------------------------ #

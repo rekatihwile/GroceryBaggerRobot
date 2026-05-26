@@ -7,6 +7,18 @@ from __future__ import annotations
 # ============================================================
 
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from motion.z_safety_config import (
+    DEFAULT_Z_SAFETY,
+    PLACE_RELEASE_GAP_MM as SHARED_PLACE_RELEASE_GAP_MM,
+    print_z_safety_settings,
+    validate_z_command,
+)
 
 PAD_X_MM = 10.0
 PAD_Y_MM = 10.0
@@ -17,13 +29,15 @@ TARGET_OBJECT_COUNT = 2
 AUTO_TARGET_COUNT_FROM_REFS = True
 
 # IMPORTANT:
-# True means placement descends to:
-#   surface_z + estimated_object_height + release_gap + small_uncertainty
-# False used to mean "descend to raw surface_z", which can crush objects.
+# This flag may disable optional dynamic correction, but it must not bypass the
+# shared minimum height, safety padding, or minimum Z clamp.
 USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT = False
-PLACE_RELEASE_GAP_MM = 2.0
+PLACE_RELEASE_GAP_MM = SHARED_PLACE_RELEASE_GAP_MM
 PLACE_Z_UNCERTAINTY_GAIN = 0.1
 PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 3.0
+PLACE_RELEASE_ANGLE_MODE = "initial_minus_padding"  # "initial_minus_padding" or "empirical_plus_offset"
+PLACE_RELEASE_EMPIRICAL_OFFSET_DEG = 30.0
+PLACE_RELEASE_INITIAL_PADDING_DEG = 5.0
 
 # Pickup can still use the full open angle imported from pick_one_place_one.
 # Placement should only crack the claw open so it does not hit the object already placed.
@@ -37,7 +51,6 @@ AUTONOMOUS_MODE = True
 
 # ============================================================
 
-import sys
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable
@@ -45,11 +58,8 @@ from typing import Callable
 import cv2
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 from motion.place_z_policy import compute_place_z_plan
+from motion.pick_place_sequence import PlaceSequenceSettings, execute_place_sequence
 from planning.aabb_utils import aabb_from_object_candidate, make_aabb_from_center_size, pad_aabb
 from planning.adjacent_placement import compute_adjacent_placement
 from scripts.pick_one_place_one import (
@@ -64,21 +74,15 @@ from scripts.pick_one_place_one import (
     OVERHEAD_DRAW_H_PX,
     STEREO_DRAW_H_PX,
     STATUS_H_PX,
-    CLAW_OPEN_DEG,
-    CLAW_CLOSED_DEG,
     Z_MAX_MM,
-    _command_servo_angle,
     _configure_modules,
-    _check_robot_pose_safe,
     _confirm,
     _load_place_surface_zone,
-    _move_checked,
     execute_pick_selected,
 )
 from scripts.pick_validation_display import _hr, make_display, print_validation
 from vision.pick_candidate_builder import CandidateDebug, SurveyState
 from vision.pick_survey_pipeline import load_vision, run_survey
-from vision.pick_z_resolver import validate_z_command
 from vision.stereo_rectifier import StereoRectifier
 from vision.torch_device import select_torch_device
 from hardware.cameras.overhead_camera import SimpleOverheadCamera
@@ -94,13 +98,36 @@ from test_calibration_bundle_live_stereo_z_pickplace import (
 
 def _resolve_release_servo_angle_deg(held_object: CandidateDebug | None, *, fallback_deg: float) -> tuple[float, str]:
     if held_object is not None:
-        angle = getattr(held_object.candidate, "initial_servo_angle_deg", None)
+        candidate = held_object.candidate
+        mode = str(PLACE_RELEASE_ANGLE_MODE).strip().lower()
+
+        empirical_angle = getattr(candidate, "servo_empirical_deg", None)
         try:
-            angle_f = float(angle)
+            empirical_f = float(empirical_angle)
         except (TypeError, ValueError):
-            angle_f = None
-        if angle_f is not None and np.isfinite(angle_f):
-            return angle_f, "held_object.initial_servo_angle_deg"
+            empirical_f = None
+
+        initial_angle = getattr(candidate, "initial_servo_angle_deg", None)
+        try:
+            initial_f = float(initial_angle)
+        except (TypeError, ValueError):
+            initial_f = None
+
+        if mode == "initial_minus_padding":
+            if initial_f is not None and np.isfinite(initial_f):
+                release_angle = float(np.clip(initial_f - PLACE_RELEASE_INITIAL_PADDING_DEG, 0.0, 70.0))
+                return release_angle, "held_object.initial_servo_angle_deg-padding"
+            if empirical_f is not None and np.isfinite(empirical_f):
+                release_angle = float(np.clip(empirical_f + PLACE_RELEASE_EMPIRICAL_OFFSET_DEG, 0.0, 70.0))
+                return release_angle, "held_object.servo_empirical_deg+offset(fallback)"
+
+        if empirical_f is not None and np.isfinite(empirical_f):
+            release_angle = float(np.clip(empirical_f + PLACE_RELEASE_EMPIRICAL_OFFSET_DEG, 0.0, 70.0))
+            return release_angle, "held_object.servo_empirical_deg+offset"
+        if initial_f is not None and np.isfinite(initial_f):
+            release_angle = float(np.clip(initial_f - PLACE_RELEASE_INITIAL_PADDING_DEG, 0.0, 70.0))
+            return release_angle, "held_object.initial_servo_angle_deg-padding(fallback)"
+
     return float(fallback_deg), "fallback_default"
 
 
@@ -135,7 +162,6 @@ def _execute_place_at_target(
     target_xy_mm: np.ndarray,
     target_phi_deg: float,
     destination_surface_z_mm: float,
-    forced_place_z_mm: float | None = None,
     on_start_place_motion: Callable[[], None] | None = None,
 ) -> bool:
     object_height_mm, object_uncertainty_clearance_mm, object_warnings = _resolve_held_object_height_and_uncertainty(held_object)
@@ -147,24 +173,13 @@ def _execute_place_at_target(
         object_uncertainty_clearance_mm=object_uncertainty_clearance_mm,
         place_uncertainty_gain=PLACE_Z_UNCERTAINTY_GAIN,
         place_uncertainty_clearance_max_mm=PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM,
+        config=DEFAULT_Z_SAFETY,
     )
 
-    if forced_place_z_mm is not None:
-        place_z = float(np.clip(float(forced_place_z_mm), 0.0, Z_MAX_MM))
-        place_source = "forced_stack_z"
-        print(f"[PLACE2 STACK] forced_place_z_mm={float(forced_place_z_mm):.3f}")
-    elif USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT:
-        place_z = float(place_plan.final_release_z_mm)
-        place_source = "dynamic_surface_plus_object_height"
-    else:
-        # Safety fallback: never descend all the way to raw surface_z while holding an object.
-        # The previous behavior used destination_surface_z_mm directly, which can crush the item
-        # and overload the prismatic joint. If dynamic mode is disabled, still keep at least the
-        # estimated object height plus release gap above the destination surface.
-        place_z = float(destination_surface_z_mm + max(0.0, object_height_mm) + PLACE_RELEASE_GAP_MM)
-        place_z = float(np.clip(place_z, 0.0, Z_MAX_MM))
-        place_source = "safe_fixed_surface_plus_object_height"
-        print("[PLACE2 WARN] dynamic place Z disabled; using surface + object_height + release_gap safety fallback.")
+    place_z = float(place_plan.final_release_z_mm)
+    place_source = "shared_place_z_policy"
+    if not USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT:
+        print("[PLACE2] dynamic place correction disabled; shared Z safety policy still controls release height.")
 
     x = float(target_xy_mm[0])
     y = float(target_xy_mm[1])
@@ -176,15 +191,10 @@ def _execute_place_at_target(
     )
 
     for label, z in (("travel", travel_z), ("place", place_z), ("retract", float(place_plan.retract_z_mm))):
-        reason = validate_z_command(z, f"[PLACE2] {label}")
+        reason = validate_z_command(z, f"[PLACE2] {label}", config=DEFAULT_Z_SAFETY)
         if reason:
             print(f"[PLACE2] ABORT: {reason}")
             return False
-
-    if not _check_robot_pose_safe(robot, x, y, travel_z, "[PLACE2] approach"):
-        return False
-    if not _check_robot_pose_safe(robot, x, y, place_z, "[PLACE2] lower"):
-        return False
 
     print("[PLACE2 Z PLAN]")
     print(f"destination_surface_z_mm = {destination_surface_z_mm:.3f}")
@@ -193,6 +203,10 @@ def _execute_place_at_target(
     print(f"object_uncertainty_clearance_mm = {object_uncertainty_clearance_mm:.3f}")
     print(f"place_uncertainty_gain = {PLACE_Z_UNCERTAINTY_GAIN:.3f}")
     print(f"place_uncertainty_clearance_mm = {place_plan.place_uncertainty_clearance_mm:.3f}")
+    print(f"raw_item_height_mm = {place_plan.raw_item_height_mm:.3f}")
+    print(f"clamped_item_height_mm = {place_plan.object_height_mm:.3f}")
+    print(f"safety_padding_mm = {place_plan.place_z_safety_padding_mm:.3f}")
+    print(f"raw_place_z_mm = {place_plan.place_z_raw_mm:.3f}")
     print(f"final_release_z_mm = {place_plan.final_release_z_mm:.3f}")
     print(f"approach/retract_z_mm = {place_plan.approach_z_mm:.3f}/{place_plan.retract_z_mm:.3f}")
     print(f"warnings = {place_plan.warnings + object_warnings}")
@@ -204,30 +218,22 @@ def _execute_place_at_target(
         print("[PLACE2] canceled by user")
         return False
 
-    if on_start_place_motion is not None:
-        print("[PLACE2] starting background prefetch survey while robot is moving")
-        try:
-            on_start_place_motion()
-        except Exception as exc:
-            print(f"[PLACE2 WARN] background prefetch start failed: {exc}")
-
-    if not _move_checked(robot, "[PLACE2] raise", z_mm=travel_z, move_time_s=COARSE_MOVE_TIME_S):
-        return False
-    if not _move_checked(robot, "[PLACE2] XY+phi", x_mm=x, y_mm=y, z_mm=travel_z, phi_deg=phi, move_time_s=XY_MOVE_TIME_S):
-        return False
-
-    if not _move_checked(robot, "[PLACE2] descend", z_mm=place_z, move_time_s=PLACE_Z_MOVE_TIME_S):
-        return False
-
-    print(f"[PLACE2] opening claw servo={release_servo_angle_deg:.2f}")
-    if not _command_servo_angle(robot, release_servo_angle_deg):
-        print("[PLACE2 WARN] failed to command release servo angle.")
-
-    if not _move_checked(robot, "[PLACE2] retract", z_mm=float(place_plan.retract_z_mm), move_time_s=COARSE_MOVE_TIME_S):
-        return False
-
-    print("[PLACE2] OK")
-    return True
+    return execute_place_sequence(
+        robot,
+        held_object,
+        target_xy_mm=np.array([x, y], dtype=np.float64),
+        target_phi_deg=phi,
+        place_z_plan=place_plan,
+        settings=PlaceSequenceSettings(
+            release_servo_deg=release_servo_angle_deg,
+            coarse_move_time_s=COARSE_MOVE_TIME_S,
+            xy_move_time_s=XY_MOVE_TIME_S,
+            z_move_time_s=PLACE_Z_MOVE_TIME_S,
+        ),
+        config=DEFAULT_Z_SAFETY,
+        on_start_place_motion=on_start_place_motion,
+        label_prefix="[PLACE2]",
+    )
 
 
 def _placed_occupancy_from_plan(center_xyz_mm: np.ndarray, size_xyz_mm: np.ndarray, label: str):
@@ -289,6 +295,7 @@ def main() -> int:
     print(f"[MAIN] target_object_count={TARGET_OBJECT_COUNT}")
     print(f"[MAIN] auto_target_count_from_refs={AUTO_TARGET_COUNT_FROM_REFS}")
     print(f"[MAIN] autonomous_mode={AUTONOMOUS_MODE}")
+    print_z_safety_settings("[MAIN] Z safety", config=DEFAULT_Z_SAFETY)
     print("[MAIN] controls: s=survey, r=rotate, 1..9=set ref slot, c=set next ref slot, l=list refs, v=validate dump, a=run N-object flow, x=reset state, q=quit")
 
     device_info = select_torch_device(use_cuda=USE_CUDA, use_half=USE_HALF)
@@ -525,7 +532,6 @@ def main() -> int:
 
                 next_prefetch_cb = _prefetch_next_survey_async if i < target_count else None
                 destination_surface_for_call = float(surface_z)
-                forced_place_z = None
                 below_top_z_mm: float | None = None
 
                 if i == 1:
@@ -563,12 +569,11 @@ def main() -> int:
                         target_xy = column_xy_secondary
                     target_phi = place_phi
                     destination_surface_for_call = float(below_top_z_mm)
-                    forced_place_z = float(below_top_z_mm + PLACE_RELEASE_GAP_MM)
                     print(
                         f"[FLOW] object{i} stacking target (2-per-layer): "
                         f"xy=({target_xy[0]:.1f},{target_xy[1]:.1f}) "
                         f"below_object={below_idx} below_top_z_mm={below_top_z_mm:.1f} "
-                        f"forced_place_z_mm={forced_place_z:.1f}"
+                        "release_z=shared_policy(surface=below_top_z)"
                     )
 
                 if not _execute_place_at_target(
@@ -577,7 +582,6 @@ def main() -> int:
                     target_xy_mm=target_xy,
                     target_phi_deg=target_phi,
                     destination_surface_z_mm=destination_surface_for_call,
-                    forced_place_z_mm=forced_place_z,
                     on_start_place_motion=next_prefetch_cb,
                 ):
                     print(f"[FLOW] object {i} place failed")

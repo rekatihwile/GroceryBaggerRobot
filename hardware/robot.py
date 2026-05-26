@@ -405,16 +405,26 @@ class Robot:
         if not self.ser:
             return DynamicFirmwareResult(ok=True, raw_lines=[])
 
-        deadline = time.time() + 3.0
+        # The firmware prints a short burst of diagnostic lines after SHOW.
+        # Stop once the stream goes idle instead of waiting a fixed multi-second timeout.
+        idle_deadline = time.time() + 0.2
+        deadline = time.time() + 0.75
         raw_lines: list[str] = []
         while time.time() < deadline:
-            line = self.ser.readline().decode(errors="replace").strip()
-            if not line:
+            if self.ser.in_waiting:
+                line = self.ser.readline().decode(errors="replace").strip()
+                if not line:
+                    continue
+                raw_lines.append(line)
+                print(f"[Teensy] {line}")
+                idle_deadline = time.time() + 0.2
+                if line.startswith("ERR"):
+                    return DynamicFirmwareResult(ok=False, raw_lines=raw_lines, error=line)
                 continue
-            raw_lines.append(line)
-            print(f"[Teensy] {line}")
-            if line.startswith("ERR"):
-                return DynamicFirmwareResult(ok=False, raw_lines=raw_lines, error=line)
+
+            if raw_lines and time.time() >= idle_deadline:
+                break
+            time.sleep(0.01)
 
         result = parse_dynamic_state_lines(raw_lines)
         result.raw_lines = raw_lines

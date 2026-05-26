@@ -12,6 +12,20 @@ selected candidate, then places the held object into one saved placement zone.
 # ============================================================
 
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from motion.z_safety_config import (
+    DEFAULT_Z_SAFETY,
+    GRIPPER_OFFSET_MM as SHARED_GRIPPER_OFFSET_MM,
+    PLACE_RELEASE_GAP_MM as SHARED_PLACE_RELEASE_GAP_MM,
+    Z_MAX_MM as SHARED_Z_MAX_MM,
+    print_z_safety_settings,
+    validate_z_command,
+)
 
 BUNDLE_PATH = Path("robot_calibration_bundle.npz")
 STEREO_CALIBRATION_PATH = Path("stereo_calibration.npz")
@@ -61,25 +75,28 @@ VALID_PICK_PHI_MODES = {
     "current_fk",
 }
 
-Z_MAX_MM: float = 290.0
-Z_GRASP_MIN_MM: float = 140.0
+Z_MAX_MM: float = SHARED_Z_MAX_MM
+MIN_PICK_GRASP_Z_MM: float = DEFAULT_Z_SAFETY.MIN_PICK_GRASP_Z_MM
 PLACE_APPROACH_Z_MM: float = Z_MAX_MM
-GRIPPER_OFFSET_MM: float = 135.0
+GRIPPER_OFFSET_MM: float = SHARED_GRIPPER_OFFSET_MM
 HOVER_HEIGHT_MM: float = Z_MAX_MM
 GRASP_OFFSET_MM: float = GRIPPER_OFFSET_MM
-USE_ROBUST_OBJECT_Z = False
+USE_ROBUST_OBJECT_Z = True
 ROBUST_TOP_PERCENTILE = 95.0
 ROBUST_BOTTOM_PERCENTILE = 5.0
 TOP_SPREAD_LOW_PERCENTILE = 90.0
 TOP_SPREAD_HIGH_PERCENTILE = 99.0
 Z_UNCERTAINTY_CLEARANCE_GAIN = 1.0
-Z_UNCERTAINTY_CLEARANCE_MIN_MM = 10.0
+Z_UNCERTAINTY_CLEARANCE_MIN_MM = 5.0
 Z_UNCERTAINTY_CLEARANCE_MAX_MM = 20.0
 Z_UNCERTAINTY_WARN_MM = 10.0
 PICK_EXTRA_CLEARANCE_MM = 0.0
-PLACE_RELEASE_GAP_MM = 180.0
+PLACE_RELEASE_GAP_MM = SHARED_PLACE_RELEASE_GAP_MM
 PLACE_Z_UNCERTAINTY_GAIN = 0.30
 PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 10.0
+PLACE_RELEASE_ANGLE_MODE = "empirical_plus_offset"
+PLACE_RELEASE_EMPIRICAL_OFFSET_DEG = 5.0
+PLACE_RELEASE_INITIAL_PADDING_DEG = 2.5
 PICK_Z_UNCERTAINTY_GAIN = .25
 PICK_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 20.0
 MIN_OBJECT_HEIGHT_MM = 2.0
@@ -156,16 +173,11 @@ Z_SURVEY = 250.0
 # ============================================================
 
 import math
-import sys
 import time
 import traceback
 
 import cv2
 import numpy as np
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 import motion.pick_validation_motion as _motion_mod
 import scripts.pick_validation_display as _display_mod
@@ -185,6 +197,12 @@ from hardware.cameras.overhead_camera import SimpleOverheadCamera
 from hardware.cameras.stereo_apriltag_viewer import SimpleStereoCamera, build_detector
 from motion.pick_z_policy import compute_pick_z_plan
 from motion.place_z_policy import compute_place_z_plan
+from motion.pick_place_sequence import (
+    PickSequenceSettings,
+    PlaceSequenceSettings,
+    execute_pick_sequence,
+    execute_place_sequence,
+)
 from motion.dynamic_grasp_policy import build_dynamic_pick_plan
 from motion.pick_validation_motion import _candidate_phi_or_current, _print_fk, startup_robot
 from scripts.pick_validation_display import _fmt_xy, _hr, make_display, print_validation
@@ -198,7 +216,6 @@ from test_calibration_bundle_live_stereo_z_pickplace import (
 )
 from vision.pick_candidate_builder import CandidateDebug, SurveyState
 from vision.pick_survey_pipeline import load_vision, run_survey
-from vision.pick_z_resolver import validate_z_command
 from vision.grasp_xy_policy import compute_grasp_xy_with_local_height
 from vision.stereo_rectifier import StereoRectifier
 from vision.torch_device import select_torch_device
@@ -518,13 +535,35 @@ def _store_dynamic_pick_results(
 def _resolve_release_servo_angle_deg(held_object: CandidateDebug | None, *, fallback_deg: float) -> tuple[float, str]:
     if held_object is not None:
         candidate = held_object.candidate
-        angle = getattr(candidate, "initial_servo_angle_deg", None)
+        mode = str(PLACE_RELEASE_ANGLE_MODE).strip().lower()
+
+        empirical_angle = getattr(candidate, "servo_empirical_deg", None)
         try:
-            angle_f = float(angle)
+            empirical_f = float(empirical_angle)
         except (TypeError, ValueError):
-            angle_f = None
-        if angle_f is not None and np.isfinite(angle_f):
-            return angle_f, "held_object.initial_servo_angle_deg"
+            empirical_f = None
+
+        initial_angle = getattr(candidate, "initial_servo_angle_deg", None)
+        try:
+            initial_f = float(initial_angle)
+        except (TypeError, ValueError):
+            initial_f = None
+
+        if mode == "initial_minus_padding":
+            if initial_f is not None and np.isfinite(initial_f):
+                release_angle = float(np.clip(initial_f - PLACE_RELEASE_INITIAL_PADDING_DEG, 0.0, 70.0))
+                return release_angle, "held_object.initial_servo_angle_deg-padding"
+            if empirical_f is not None and np.isfinite(empirical_f):
+                release_angle = float(np.clip(empirical_f + PLACE_RELEASE_EMPIRICAL_OFFSET_DEG, 0.0, 70.0))
+                return release_angle, "held_object.servo_empirical_deg+offset(fallback)"
+
+        if empirical_f is not None and np.isfinite(empirical_f):
+            release_angle = float(np.clip(empirical_f + PLACE_RELEASE_EMPIRICAL_OFFSET_DEG, 0.0, 70.0))
+            return release_angle, "held_object.servo_empirical_deg+offset"
+        if initial_f is not None and np.isfinite(initial_f):
+            release_angle = float(np.clip(initial_f - PLACE_RELEASE_INITIAL_PADDING_DEG, 0.0, 70.0))
+            return release_angle, "held_object.initial_servo_angle_deg-padding(fallback)"
+
     return float(fallback_deg), "fallback_default"
 
 
@@ -534,25 +573,24 @@ def _command_servo_angle(robot, angle_deg: float) -> bool:
     return bool(robot.servo(int(round(float(angle_deg)))))
 
 
-def _execute_fixed_pick_path(robot, x: float, y: float, phi: float, z_travel: float, z_grasp: float) -> bool:
-    print(f"[PICK] opening claw servo={CLAW_OPEN_DEG}")
-    robot.servo(CLAW_OPEN_DEG)
-
-    if not _move_checked(robot, "[PICK] raise", z_mm=z_travel, move_time_s=COARSE_MOVE_TIME_S):
-        return False
-    if not _move_checked(robot, "[PICK] XY+phi", x_mm=x, y_mm=y, z_mm=z_travel, phi_deg=phi, move_time_s=XY_MOVE_TIME_S):
-        return False
-    if not _move_checked(robot, "[PICK] grasp", z_mm=z_grasp, move_time_s=PICK_Z_MOVE_TIME_S):
-        return False
-
-    print(f"[PICK] closing claw servo={CLAW_CLOSED_DEG}")
-    robot.servo(CLAW_CLOSED_DEG)
-
-    if not _move_checked(robot, "[PICK] retract", z_mm=z_travel, move_time_s=COARSE_MOVE_TIME_S):
-        return False
-
-    print("[PICK] OK - item should be held.")
-    return True
+def _execute_fixed_pick_path(robot, x: float, y: float, phi: float, pick_plan) -> bool:
+    return execute_pick_sequence(
+        robot,
+        None,
+        target_xy_mm=np.array([x, y], dtype=np.float64),
+        target_phi_deg=phi,
+        pick_z_plan=pick_plan,
+        settings=PickSequenceSettings(
+            claw_open_deg=CLAW_OPEN_DEG,
+            claw_closed_deg=CLAW_CLOSED_DEG,
+            coarse_move_time_s=COARSE_MOVE_TIME_S,
+            xy_move_time_s=XY_MOVE_TIME_S,
+            z_move_time_s=PICK_Z_MOVE_TIME_S,
+        ),
+        config=DEFAULT_Z_SAFETY,
+        check_pose_safe_fn=_check_robot_pose_safe,
+        label_prefix="[PICK]",
+    )
 
 
 def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None) -> bool:
@@ -602,30 +640,24 @@ def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None
         except Exception as exc:
             print(f"[GRASP XY PLAN] fallback to default target XY due to error: {exc}")
 
-    z_travel = float(Z_MAX_MM)
-    z_grasp = float(c.grasp_robot_z)
     z_debug = getattr(c, "z_debug", None)
-    if z_debug is not None:
-        pick_plan = compute_pick_z_plan(
-            z_result=z_debug,
-            gripper_offset_mm=GRIPPER_OFFSET_MM,
-            z_max_mm=Z_MAX_MM,
-            pick_extra_clearance_mm=PICK_EXTRA_CLEARANCE_MM,
-            pick_uncertainty_gain=PICK_Z_UNCERTAINTY_GAIN,
-            pick_uncertainty_clearance_max_mm=PICK_Z_UNCERTAINTY_CLEARANCE_MAX_MM,
-        )
-        z_travel = float(pick_plan.travel_z_mm)
-        z_grasp = float(pick_plan.final_grasp_z_mm)
-
-    # Enforce a global minimum grasp height for safety/consistency.
-    if z_grasp < Z_GRASP_MIN_MM:
-        print(f"[PICK] clamping z_grasp from {z_grasp:.1f} to zmin {Z_GRASP_MIN_MM:.1f}")
-        z_grasp = float(Z_GRASP_MIN_MM)
+    pick_plan = compute_pick_z_plan(
+        z_result=z_debug,
+        candidate=c,
+        gripper_offset_mm=GRIPPER_OFFSET_MM,
+        z_max_mm=Z_MAX_MM,
+        pick_extra_clearance_mm=PICK_EXTRA_CLEARANCE_MM,
+        pick_uncertainty_gain=PICK_Z_UNCERTAINTY_GAIN,
+        pick_uncertainty_clearance_max_mm=PICK_Z_UNCERTAINTY_CLEARANCE_MAX_MM,
+        config=DEFAULT_Z_SAFETY,
+    )
+    z_travel = float(pick_plan.approach_z_mm)
+    z_grasp = float(pick_plan.final_grasp_z_mm)
 
     phi = _candidate_phi_or_current(robot, c)
 
-    for label, z in (("travel", z_travel), ("grasp", z_grasp)):
-        reason = validate_z_command(z, f"[PICK] {label}")
+    for label, z in (("approach", z_travel), ("grasp", z_grasp), ("retract", pick_plan.retract_z_mm)):
+        reason = validate_z_command(z, f"[PICK] {label}", config=DEFAULT_Z_SAFETY)
         if reason:
             print(f"[PICK] ABORT: {reason}")
             return False
@@ -634,7 +666,10 @@ def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None
     print(f"[PICK] candidate [{c.index}] {c.yolo.class_name}")
     print(f"[PICK] XY={_fmt_xy(np.array([x, y], dtype=np.float64))} source={c.target_xy_source_effective}")
     print(f"[PICK] phi={phi:.2f} deg source={c.pick_phi_source}")
-    print(f"[PICK] z plan: travel={z_travel:.1f}, grasp={z_grasp:.1f}")
+    print(
+        f"[PICK] z plan: approach={z_travel:.1f}, grasp={z_grasp:.1f}, "
+        f"retract={pick_plan.retract_z_mm:.1f}"
+    )
     _print_object_z_diagnostics("[PICK]", c)
 
     if not _confirm("[PICK] Real pick motion will execute the configured pick sequence and retract.", REQUIRE_CONFIRM_BEFORE_PICK):
@@ -642,13 +677,13 @@ def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None
         return False
 
     if not ENABLE_DYNAMIC_PICK:
-        return _execute_fixed_pick_path(robot, x, y, phi, z_travel, z_grasp)
+        return _execute_fixed_pick_path(robot, x, y, phi, pick_plan)
 
     if not hasattr(robot, "dynamic_lower_robot_z") or not hasattr(robot, "dynamic_grip") or not hasattr(robot, "set_servo_fractional"):
         print("[PICK] dynamic pick helpers unavailable on Robot.")
         if DYNAMIC_PICK_FALLBACK_TO_FIXED:
             print("[PICK] falling back to fixed open-descend-close path.")
-            return _execute_fixed_pick_path(robot, x, y, phi, z_travel, z_grasp)
+            return _execute_fixed_pick_path(robot, x, y, phi, pick_plan)
         return False
 
     try:
@@ -671,16 +706,16 @@ def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None
         print(f"[PICK] dynamic plan build failed: {exc}")
         if DYNAMIC_PICK_FALLBACK_TO_FIXED:
             print("[PICK] falling back to fixed open-descend-close path.")
-            return _execute_fixed_pick_path(robot, x, y, phi, z_travel, z_grasp)
+            return _execute_fixed_pick_path(robot, x, y, phi, pick_plan)
         return False
 
-    probe_reason = validate_z_command(dynamic_plan.dynamic_lower_start_z_mm, "[PICK] probe_start")
+    probe_reason = validate_z_command(dynamic_plan.dynamic_lower_start_z_mm, "[PICK] probe_start", config=DEFAULT_Z_SAFETY)
     if probe_reason:
         print(f"[PICK] ABORT: {probe_reason}")
         return False
 
     descent_target_z_mm = float(dynamic_plan.dynamic_pregrasp_robot_z_mm if USE_DYNAMIC_PICK_HEIGHT else z_grasp)
-    descent_reason = validate_z_command(descent_target_z_mm, "[PICK] descent_target")
+    descent_reason = validate_z_command(descent_target_z_mm, "[PICK] descent_target", config=DEFAULT_Z_SAFETY)
     if descent_reason:
         print(f"[PICK] ABORT: {descent_reason}")
         return False
@@ -782,7 +817,11 @@ def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None
 
         if lower_result.z_empirical_mm is not None and np.isfinite(float(lower_result.z_empirical_mm)):
             z_empirical_robot_frame_mm = float(robot.teensy_direct_j3_mm_to_robot_z(float(lower_result.z_empirical_mm)))
-            empirical_reason = validate_z_command(z_empirical_robot_frame_mm, "[PICK] z_empirical_robot_frame")
+            empirical_reason = validate_z_command(
+                z_empirical_robot_frame_mm,
+                "[PICK] z_empirical_robot_frame",
+                config=DEFAULT_Z_SAFETY,
+            )
             if empirical_reason:
                 print(f"[PICK] ABORT: {empirical_reason}")
                 return False
@@ -958,18 +997,13 @@ def execute_place_zone(robot, held_object: CandidateDebug | None, *, allow_manua
         object_uncertainty_clearance_mm=object_uncertainty_clearance_mm,
         place_uncertainty_gain=PLACE_Z_UNCERTAINTY_GAIN,
         place_uncertainty_clearance_max_mm=PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM,
+        config=DEFAULT_Z_SAFETY,
     )
 
-    if USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT:
-        place_z = float(place_plan.final_release_z_mm)
-        place_source = "dynamic_surface_plus_object_height"
-    else:
-        if zone.get("legacy_place_z_mm") is not None:
-            place_z = float(zone["legacy_place_z_mm"])
-        else:
-            place_z = float(destination_surface_z_mm)
-        place_source = "fixed_place_z"
-        print("[PLACE] dynamic place Z disabled; using fixed place Z from zone config.")
+    place_z = float(place_plan.final_release_z_mm)
+    place_source = "shared_place_z_policy"
+    if not USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT:
+        print("[PLACE] dynamic place correction disabled; shared Z safety policy still controls release height.")
 
     place_phi = float(zone["default_phi_deg"])
     if USE_PICK_PHI_FOR_PLACE and held_object is not None:
@@ -983,7 +1017,7 @@ def execute_place_zone(robot, held_object: CandidateDebug | None, *, allow_manua
         fallback_deg=CLAW_OPEN_DEG,
     )
     for label, z in (("travel", travel_z), ("place", place_z), ("retract", float(place_plan.retract_z_mm))):
-        reason = validate_z_command(z, f"[PLACE] {label}")
+        reason = validate_z_command(z, f"[PLACE] {label}", config=DEFAULT_Z_SAFETY)
         if reason:
             print(f"[PLACE] ABORT: {reason}")
             return False
@@ -1005,6 +1039,10 @@ def execute_place_zone(robot, held_object: CandidateDebug | None, *, allow_manua
     print(f"object_uncertainty_clearance_mm = {object_uncertainty_clearance_mm:.3f}")
     print(f"place_uncertainty_gain = {PLACE_Z_UNCERTAINTY_GAIN:.3f}")
     print(f"place_uncertainty_clearance_mm = {place_plan.place_uncertainty_clearance_mm:.3f}")
+    print(f"raw_item_height_mm = {place_plan.raw_item_height_mm:.3f}")
+    print(f"clamped_item_height_mm = {place_plan.object_height_mm:.3f}")
+    print(f"safety_padding_mm = {place_plan.place_z_safety_padding_mm:.3f}")
+    print(f"raw_place_z_mm = {place_plan.place_z_raw_mm:.3f}")
     print(f"final_release_z_mm = {place_plan.final_release_z_mm:.3f}")
     print(f"approach/retract_z_mm = {place_plan.approach_z_mm:.3f}/{place_plan.retract_z_mm:.3f}")
     print(f"warnings = {place_plan.warnings + object_warnings}")
@@ -1014,22 +1052,22 @@ def execute_place_zone(robot, held_object: CandidateDebug | None, *, allow_manua
         print("[PLACE] canceled by user.")
         return False
 
-    if not _move_checked(robot, "[PLACE] raise", z_mm=travel_z, move_time_s=COARSE_MOVE_TIME_S):
-        return False
-    if not _move_checked(robot, "[PLACE] XY+phi", x_mm=x, y_mm=y, z_mm=travel_z, phi_deg=place_phi, move_time_s=XY_MOVE_TIME_S):
-        return False
-    if not _move_checked(robot, "[PLACE] descend", z_mm=place_z, move_time_s=PLACE_Z_MOVE_TIME_S):
-        return False
-
-    print(f"[PLACE] opening claw servo={release_servo_angle_deg:.2f}")
-    if not _command_servo_angle(robot, release_servo_angle_deg):
-        print("[PLACE] WARN failed to command release servo angle.")
-
-    if not _move_checked(robot, "[PLACE] retract", z_mm=float(place_plan.retract_z_mm), move_time_s=COARSE_MOVE_TIME_S):
-        return False
-
-    print("[PLACE] OK - item released and robot retracted.")
-    return True
+    return execute_place_sequence(
+        robot,
+        held_object,
+        target_xy_mm=np.array([x, y], dtype=np.float64),
+        target_phi_deg=place_phi,
+        place_z_plan=place_plan,
+        settings=PlaceSequenceSettings(
+            release_servo_deg=release_servo_angle_deg,
+            coarse_move_time_s=COARSE_MOVE_TIME_S,
+            xy_move_time_s=XY_MOVE_TIME_S,
+            z_move_time_s=PLACE_Z_MOVE_TIME_S,
+        ),
+        config=DEFAULT_Z_SAFETY,
+        check_pose_safe_fn=_check_robot_pose_safe,
+        label_prefix="[PLACE]",
+    )
 
 
 def main() -> int:
@@ -1041,6 +1079,7 @@ def main() -> int:
     print("[MAIN] This is a single-object placement repeatability test, not full bagging.")
     print(f"[MAIN] place surface zone: {PLACE_SURFACE_ZONE_NAME} from {SURFACE_ZONE_CONFIG_PATH}")
     print(f"[MAIN] Z_MAX={Z_MAX_MM:.1f} PLACE_APPROACH_Z={PLACE_APPROACH_Z_MM:.1f}")
+    print_z_safety_settings("[MAIN] Z safety", config=DEFAULT_Z_SAFETY)
     print(
         f"[MAIN] robust Z={USE_ROBUST_OBJECT_Z} dynamic place Z={USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT} "
         f"release_gap={PLACE_RELEASE_GAP_MM:.1f} place_uncertainty_gain={PLACE_Z_UNCERTAINTY_GAIN:.2f}"

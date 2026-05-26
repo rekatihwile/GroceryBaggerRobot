@@ -26,31 +26,28 @@ def main() -> int:
 
     pick_plan = compute_pick_z_plan(
         z_result=z_result,
-        gripper_offset_mm=125.0,
-        z_max_mm=275.0,
-        pick_extra_clearance_mm=0.0,
-        pick_uncertainty_gain=1.0,
-        pick_uncertainty_clearance_max_mm=20.0,
+        gripper_offset_mm=135.0,
+        z_max_mm=290.0,
     )
 
     place_plan = compute_place_z_plan(
         destination_surface_z_mm=20.0,
         object_height_mm=100.0,
-        z_max_mm=275.0,
+        z_max_mm=290.0,
         release_gap_mm=1.0,
         object_uncertainty_clearance_mm=12.0,
         place_uncertainty_gain=0.25,
         place_uncertainty_clearance_max_mm=5.0,
     )
 
-    # 20 + 100 + 1 + (12 * 0.25) = 124
-    assert abs(place_plan.final_release_z_mm - 124.0) < 1e-9
+    # 20 + 100 + 50 safety padding + 1 release gap = 171
+    assert abs(place_plan.final_release_z_mm - 171.0) < 1e-9
     assert abs(place_plan.place_uncertainty_clearance_mm - 3.0) < 1e-9
 
     capped_place_plan = compute_place_z_plan(
         destination_surface_z_mm=20.0,
         object_height_mm=100.0,
-        z_max_mm=275.0,
+        z_max_mm=290.0,
         release_gap_mm=1.0,
         object_uncertainty_clearance_mm=200.0,
         place_uncertainty_gain=0.25,
@@ -58,7 +55,8 @@ def main() -> int:
     )
     assert abs(capped_place_plan.place_uncertainty_clearance_mm - 5.0) < 1e-9
 
-    assert pick_plan.pick_uncertainty_clearance_mm > place_plan.place_uncertainty_clearance_mm
+    assert abs(pick_plan.final_grasp_z_mm - 150.0) < 1e-9
+    assert "legacy_place_uncertainty_ignored_by_shared_padding" in place_plan.warnings
 
     print("[PASS] smoke_pick_place_z_policy")
     return 0
