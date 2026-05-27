@@ -35,6 +35,9 @@ class PlaceSequenceSettings:
     z_move_time_s: float
     xy_move_time_s: float | None = None
     claw_settle_s: float = 0.0
+    use_dynamic_release: bool = False
+    dynamic_release_timeout_s: float = 45.0
+    dynamic_release_max_open_deg: float | None = None
 
 
 def _command_servo_angle(robot, angle_deg: float) -> bool:
@@ -213,6 +216,7 @@ def execute_place_sequence(
     move_fn: MoveFn | None = None,
     check_pose_safe_fn: PoseCheckFn | None = None,
     on_start_place_motion: Callable[[], None] | None = None,
+    on_after_release: Callable[[], None] | None = None,
     label_prefix: str = "[PLACE]",
 ) -> bool:
     """Approach, descend to release, open claw, and retract."""
@@ -278,9 +282,43 @@ def execute_place_sequence(
     ):
         return False
 
-    print(f"{label_prefix} opening claw servo={settings.release_servo_deg:.2f}")
-    if not _command_servo_angle(robot, settings.release_servo_deg):
-        print(f"{label_prefix} WARN: failed to command release servo angle")
+    release_ok = True
+    if settings.use_dynamic_release:
+        if hasattr(robot, "dynamic_release"):
+            print(
+                f"{label_prefix} triggering dynamic release (DR) "
+                f"max_open_deg={settings.dynamic_release_max_open_deg}"
+            )
+            release_result = robot.dynamic_release(
+                max_open_angle_deg=settings.dynamic_release_max_open_deg,
+                timeout_s=float(settings.dynamic_release_timeout_s),
+            )
+            print(
+                f"{label_prefix} dynamic release result: "
+                f"ok={release_result.ok} "
+                f"servo_release_empirical_deg={release_result.servo_release_empirical_deg} "
+                f"error={release_result.error}"
+            )
+            release_ok = bool(release_result.ok)
+        else:
+            print(f"{label_prefix} ABORT: robot.dynamic_release unavailable")
+            release_ok = False
+    else:
+        print(f"{label_prefix} opening claw servo={settings.release_servo_deg:.2f}")
+        if not _command_servo_angle(robot, settings.release_servo_deg):
+            print(f"{label_prefix} WARN: failed to command release servo angle")
+
+    if not release_ok:
+        print(f"{label_prefix} ABORT: release command failed")
+        return False
+
+    if on_after_release is not None:
+        print(f"{label_prefix} starting after-release callback before retract")
+        try:
+            on_after_release()
+        except Exception as exc:
+            print(f"{label_prefix} WARN: after-release callback failed: {exc}")
+
     if settings.claw_settle_s > 0.0:
         time.sleep(float(settings.claw_settle_s))
 

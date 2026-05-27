@@ -1,12 +1,12 @@
 {
-  "created_at": "2026-05-23T17:33:29",
+  "created_at": "2026-05-27T13:34:21",
   "reference_tag_id": 10,
   "reference_tag_size_mm": 40.0,
   "reference_object_height_mm": 100.0,
   "model_type": "quadratic",
-  "num_samples": 22,
-  "x_center_mm": 336.7323043834754,
-  "y_center_mm": 375.28024988523043,
+  "num_samples": 14,
+  "x_center_mm": 222.25730028611684,
+  "y_center_mm": 350.66876350897604,
   "terms": [
     "1",
     "dx",
@@ -16,14 +16,14 @@
     "dy^2"
   ],
   "coefficients_mm": [
-    -48.58310643787784,
-    -0.004641320108856521,
-    0.010511964928290358,
-    -6.007800407072431e-05,
-    -0.0001299330063535783,
-    -3.2232590376934066e-05
+    -48.20888710270461,
+    0.005839745806088147,
+    0.025166070391894314,
+    -0.00016467865892420212,
+    -0.00014577218379294675,
+    8.509249978018701e-05
   ],
-  "rmse_mm": 1.1511139309614942,
-  "max_abs_error_mm": 2.7912608930032334,
+  "rmse_mm": 0.781396725117054,
+  "max_abs_error_mm": 1.9650486258256308,
   "equation_note": "Let dx = x_robot_mm - x_center_mm and dy = y_robot_mm - y_center_mm. Then z_ground_mm = sum(coefficients_mm[i] * term_i)."
 }

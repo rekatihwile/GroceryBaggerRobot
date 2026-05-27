@@ -35,9 +35,8 @@ USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT = False
 PLACE_RELEASE_GAP_MM = SHARED_PLACE_RELEASE_GAP_MM
 PLACE_Z_UNCERTAINTY_GAIN = 0.1
 PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 3.0
-PLACE_RELEASE_ANGLE_MODE = "initial_minus_padding"  # "initial_minus_padding" or "empirical_plus_offset"
-PLACE_RELEASE_EMPIRICAL_OFFSET_DEG = 30.0
-PLACE_RELEASE_INITIAL_PADDING_DEG = 5.0
+USE_DYNAMIC_RELEASE_FOR_PLACE = True
+DYNAMIC_RELEASE_TIMEOUT_S = 45.0
 
 # Pickup can still use the full open angle imported from pick_one_place_one.
 # Placement should only crack the claw open so it does not hit the object already placed.
@@ -64,6 +63,7 @@ from planning.aabb_utils import aabb_from_object_candidate, make_aabb_from_cente
 from planning.adjacent_placement import compute_adjacent_placement
 from scripts.pick_one_place_one import (
     BUNDLE_PATH,
+    CLAW_OPEN_DEG,
     STEREO_CALIBRATION_PATH,
     USE_CUDA,
     USE_HALF,
@@ -77,7 +77,10 @@ from scripts.pick_one_place_one import (
     Z_MAX_MM,
     _configure_modules,
     _confirm,
+    get_use_z_ground_model_for_pick_surface,
     _load_place_surface_zone,
+    preview_pick_grasp_z_with_and_without_zground,
+    set_use_z_ground_model_for_pick_surface,
     execute_pick_selected,
 )
 from scripts.pick_validation_display import _hr, make_display, print_validation
@@ -94,41 +97,6 @@ from test_calibration_bundle_live_stereo_z_pickplace import (
     print_matrix_labeled,
     read_command_key,
 )
-
-
-def _resolve_release_servo_angle_deg(held_object: CandidateDebug | None, *, fallback_deg: float) -> tuple[float, str]:
-    if held_object is not None:
-        candidate = held_object.candidate
-        mode = str(PLACE_RELEASE_ANGLE_MODE).strip().lower()
-
-        empirical_angle = getattr(candidate, "servo_empirical_deg", None)
-        try:
-            empirical_f = float(empirical_angle)
-        except (TypeError, ValueError):
-            empirical_f = None
-
-        initial_angle = getattr(candidate, "initial_servo_angle_deg", None)
-        try:
-            initial_f = float(initial_angle)
-        except (TypeError, ValueError):
-            initial_f = None
-
-        if mode == "initial_minus_padding":
-            if initial_f is not None and np.isfinite(initial_f):
-                release_angle = float(np.clip(initial_f - PLACE_RELEASE_INITIAL_PADDING_DEG, 0.0, 70.0))
-                return release_angle, "held_object.initial_servo_angle_deg-padding"
-            if empirical_f is not None and np.isfinite(empirical_f):
-                release_angle = float(np.clip(empirical_f + PLACE_RELEASE_EMPIRICAL_OFFSET_DEG, 0.0, 70.0))
-                return release_angle, "held_object.servo_empirical_deg+offset(fallback)"
-
-        if empirical_f is not None and np.isfinite(empirical_f):
-            release_angle = float(np.clip(empirical_f + PLACE_RELEASE_EMPIRICAL_OFFSET_DEG, 0.0, 70.0))
-            return release_angle, "held_object.servo_empirical_deg+offset"
-        if initial_f is not None and np.isfinite(initial_f):
-            release_angle = float(np.clip(initial_f - PLACE_RELEASE_INITIAL_PADDING_DEG, 0.0, 70.0))
-            return release_angle, "held_object.initial_servo_angle_deg-padding(fallback)"
-
-    return float(fallback_deg), "fallback_default"
 
 
 def _resolve_held_object_height_and_uncertainty(held_object: CandidateDebug | None) -> tuple[float, float, list[str]]:
@@ -185,10 +153,15 @@ def _execute_place_at_target(
     y = float(target_xy_mm[1])
     phi = float(target_phi_deg)
     travel_z = float(place_plan.approach_z_mm)
-    release_servo_angle_deg, release_servo_source = _resolve_release_servo_angle_deg(
-        held_object,
-        fallback_deg=PLACE_CLAW_OPEN_DEG,
-    )
+
+    initial_pick_open_deg = getattr(held_object.candidate, "initial_servo_angle_deg", None)
+    try:
+        release_max_open_deg = float(initial_pick_open_deg)
+    except (TypeError, ValueError):
+        release_max_open_deg = float(CLAW_OPEN_DEG)
+    if not np.isfinite(release_max_open_deg):
+        release_max_open_deg = float(CLAW_OPEN_DEG)
+    release_max_open_deg = float(np.clip(release_max_open_deg, 0.0, 180.0))
 
     for label, z in (("travel", travel_z), ("place", place_z), ("retract", float(place_plan.retract_z_mm))):
         reason = validate_z_command(z, f"[PLACE2] {label}", config=DEFAULT_Z_SAFETY)
@@ -211,7 +184,11 @@ def _execute_place_at_target(
     print(f"approach/retract_z_mm = {place_plan.approach_z_mm:.3f}/{place_plan.retract_z_mm:.3f}")
     print(f"warnings = {place_plan.warnings + object_warnings}")
     print(f"target_xy_mm = ({x:.1f}, {y:.1f}) target_phi_deg = {phi:.1f} source = {place_source}")
-    print(f"place_claw_open_deg = {release_servo_angle_deg:.2f} source = {release_servo_source}")
+    print(
+        f"release_mode = {'dynamic_release_DR' if USE_DYNAMIC_RELEASE_FOR_PLACE else 'fixed_servo_open'} "
+        f"fallback_open_deg = {PLACE_CLAW_OPEN_DEG:.2f}"
+    )
+    print(f"dynamic_release_max_open_deg = {release_max_open_deg:.2f} (from pick initial angle)")
 
     require_confirmation = not bool(AUTONOMOUS_MODE)
     if not _confirm("[PLACE2] Real place motion will move to computed adjacent target and open claw.", require_confirmation):
@@ -225,10 +202,13 @@ def _execute_place_at_target(
         target_phi_deg=phi,
         place_z_plan=place_plan,
         settings=PlaceSequenceSettings(
-            release_servo_deg=release_servo_angle_deg,
+            release_servo_deg=PLACE_CLAW_OPEN_DEG,
             coarse_move_time_s=COARSE_MOVE_TIME_S,
             xy_move_time_s=XY_MOVE_TIME_S,
             z_move_time_s=PLACE_Z_MOVE_TIME_S,
+            use_dynamic_release=USE_DYNAMIC_RELEASE_FOR_PLACE,
+            dynamic_release_timeout_s=DYNAMIC_RELEASE_TIMEOUT_S,
+            dynamic_release_max_open_deg=release_max_open_deg,
         ),
         config=DEFAULT_Z_SAFETY,
         on_start_place_motion=on_start_place_motion,
@@ -295,8 +275,9 @@ def main() -> int:
     print(f"[MAIN] target_object_count={TARGET_OBJECT_COUNT}")
     print(f"[MAIN] auto_target_count_from_refs={AUTO_TARGET_COUNT_FROM_REFS}")
     print(f"[MAIN] autonomous_mode={AUTONOMOUS_MODE}")
+    print(f"[MAIN] pick_z_ground_compensation={get_use_z_ground_model_for_pick_surface()}")
     print_z_safety_settings("[MAIN] Z safety", config=DEFAULT_Z_SAFETY)
-    print("[MAIN] controls: s=survey, r=rotate, 1..9=set ref slot, c=set next ref slot, l=list refs, v=validate dump, a=run N-object flow, x=reset state, q=quit")
+    print("[MAIN] controls: s=survey, r=rotate, 1..9=set ref slot, c=set next ref slot, l=list refs, v=validate+grasp compare, t=toggle z_ground pick compensation, a=run N-object flow, x=reset state, q=quit")
 
     device_info = select_torch_device(use_cuda=USE_CUDA, use_half=USE_HALF)
     bundle = load_bundle(BUNDLE_PATH)
@@ -437,6 +418,38 @@ def main() -> int:
 
             if key == "v":
                 print_validation(state, 0 if state is None else state.selected_index)
+                if state is None or not state.candidates:
+                    print("[COMPARE] no candidate selected; press s first")
+                    continue
+                try:
+                    dbg = state.candidates[state.selected_index]
+                    cmp = preview_pick_grasp_z_with_and_without_zground(dbg)
+                    print("[COMPARE PICK Z]")
+                    print(
+                        f"candidate={dbg.candidate.yolo.class_name} "
+                        f"xy=({cmp['x_mm']:.1f},{cmp['y_mm']:.1f}) "
+                        f"active_mode={cmp['active_mode']}"
+                    )
+                    print(
+                        f"grasp_z_stereo_only={cmp['base_grasp_z_mm']:.2f} "
+                        f"grasp_z_zground={cmp['zground_grasp_z_mm']:.2f} "
+                        f"delta={cmp['delta_grasp_z_mm']:+.2f}"
+                    )
+                    print(
+                        f"z_ground_mm={cmp['z_ground_mm']} "
+                        f"object_height_mm={cmp['object_height_mm']} "
+                        f"surface_override_mm={cmp['surface_override_mm']} "
+                        f"model_available={cmp['zground_model_available']}"
+                    )
+                except Exception as exc:
+                    print(f"[COMPARE] failed: {exc}")
+                continue
+
+            if key == "t":
+                new_state = set_use_z_ground_model_for_pick_surface(
+                    not get_use_z_ground_model_for_pick_surface()
+                )
+                print(f"[MAIN] pick_z_ground_compensation={new_state}")
                 continue
 
             if key != "a":

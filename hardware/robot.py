@@ -134,6 +134,7 @@ class DynamicFirmwareResult:
     ok: bool
     z_empirical_mm: float | None = None
     servo_empirical_deg: float | None = None
+    servo_release_empirical_deg: float | None = None
     raw_lines: list[str] = field(default_factory=list)
     error: str | None = None
 
@@ -159,6 +160,7 @@ class ZCommandTrace:
 def parse_dynamic_state_lines(lines: list[str]) -> DynamicFirmwareResult:
     z_empirical_mm: float | None = None
     servo_empirical_deg: float | None = None
+    servo_release_empirical_deg: float | None = None
 
     for raw in lines:
         line = str(raw).strip()
@@ -176,11 +178,23 @@ def parse_dynamic_state_lines(lines: list[str]) -> DynamicFirmwareResult:
             except ValueError:
                 pass
 
-    ok = (z_empirical_mm is not None) or (servo_empirical_deg is not None)
+        servo_release_match = re.search(r"servo_release_empirical\s*=\s*([-+]?\d+(?:\.\d+)?)", line, re.IGNORECASE)
+        if servo_release_match is not None:
+            try:
+                servo_release_empirical_deg = float(servo_release_match.group(1))
+            except ValueError:
+                pass
+
+    ok = (
+        (z_empirical_mm is not None)
+        or (servo_empirical_deg is not None)
+        or (servo_release_empirical_deg is not None)
+    )
     return DynamicFirmwareResult(
         ok=ok,
         z_empirical_mm=z_empirical_mm,
         servo_empirical_deg=servo_empirical_deg,
+        servo_release_empirical_deg=servo_release_empirical_deg,
         raw_lines=[str(line) for line in lines],
         error=None if ok else "dynamic_state_not_found",
     )
@@ -494,6 +508,45 @@ class Robot:
             f"DG {float(angle_start_deg):.3f} {float(deriv_thresh_ma):.3f} "
             f"{int(n_steps)} {1 if signed_only else 0}"
         )
+        self.send(cmd)
+        ok, raw_lines, error = self._read_lines_until_done(timeout_s=float(timeout_s))
+        if not ok:
+            return DynamicFirmwareResult(ok=False, raw_lines=raw_lines, error=error)
+
+        state = self.show_dynamic_state()
+        state.ok = state.ok and ok
+        state.raw_lines = raw_lines + state.raw_lines
+        state.error = state.error if state.error is not None else error
+        return state
+
+    def dynamic_release(
+        self,
+        angle_start_deg=None,
+        deriv_thresh_ma=None,
+        n_steps=None,
+        signed_only=False,
+        max_open_angle_deg=None,
+        timeout_s=45,
+    ) -> DynamicFirmwareResult:
+        # Bare DR uses firmware defaults (including auto start-angle behavior).
+        if angle_start_deg is None and deriv_thresh_ma is None and n_steps is None:
+            if max_open_angle_deg is None:
+                cmd = "DR"
+            else:
+                cmd = f"DR max_open_deg={float(max_open_angle_deg):.3f}"
+        else:
+            if angle_start_deg is None or deriv_thresh_ma is None or n_steps is None:
+                return DynamicFirmwareResult(
+                    ok=False,
+                    error="dynamic_release_requires_angle_thresh_nsteps_or_no_args",
+                )
+            cmd = (
+                f"DR {float(angle_start_deg):.3f} {float(deriv_thresh_ma):.3f} "
+                f"{int(n_steps)} {1 if signed_only else 0}"
+            )
+            if max_open_angle_deg is not None:
+                cmd += f" {float(max_open_angle_deg):.3f}"
+
         self.send(cmd)
         ok, raw_lines, error = self._read_lines_until_done(timeout_s=float(timeout_s))
         if not ok:

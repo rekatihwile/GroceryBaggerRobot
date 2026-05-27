@@ -129,6 +129,7 @@ PICK_PHI_MODE: str = "triangulated_short_side"
 VALID_PICK_PHI_MODES = {
     "centroid_longest_ray_perp",
     "centroid_shortest_ray_parallel",
+    "overhead_semi_minor_projected",
     "overhead_minor_axis",
     "pointcloud_shortest_path",
     "triangulated_short_side",

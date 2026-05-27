@@ -173,7 +173,7 @@
 
     // Dynamic grip: how much the servo closes per current sample (deg).
     // At 100 Hz sampling, 0.05 deg/sample = 5 deg/sec.
-    const float DYN_GRIP_DEG_PER_SAMPLE = 0.05f;
+    const float DYN_GRIP_DEG_PER_SAMPLE = 0.005f;
     const float DYN_GRIP_MIN_ANGLE_DEG  = 5.0f;     // safety floor before full close
     const unsigned long DYN_GRIP_TIMEOUT_MS = 20000;
 
@@ -190,24 +190,33 @@
 
     // Default command parameters (used when args are omitted).
     float dyn_default_dg_start_deg         = 50.0f;
+    float dyn_default_dr_start_deg         = 30.0f;
     float dyn_default_dl_start_mm          = 250.0f;
     float dyn_default_deriv_thresh_ma      = 30.0f;
     int   dyn_default_deriv_n_steps_grip   = 1;
+    int   dyn_default_deriv_n_steps_release  = 3;
     int   dyn_default_deriv_n_steps_lower  = 1;
     bool  dyn_default_signed_only          = false;
     float dyn_default_dl_servo_deg         = NAN;     // NAN => use current servo angle
 
     // Dynamic behavior tuning.
-    float dyn_grip_open_offset_deg         = 5.0f;
+    float dyn_grip_open_offset_deg         = 10.0f;
+    float dyn_release_close_offset_deg      = 5.0f;
     float dyn_grip_deg_per_sample_runtime  = 1.0f;
+    float dyn_release_deg_per_sample_runtime = 0.1f;
     float dyn_lower_speed_mm_s_runtime     = 50.0f;
     bool  dyn_grip_object_squishable       = false;
     float dyn_grip_post_contact_extra_close_deg = 0.0f;
+    float dyn_release_post_contact_extra_open_deg = 10.0f;
+    bool  dyn_release_high_dip_enabled     = true;
+    float dyn_release_high_arm_ma          = 3000.0f;
+    float dyn_release_high_dip_ma          = 500.0f;
 
     // Secondary pattern gate tuning.
     float dyn_deriv_nonzero_eps_ma         = 1.0f;    // |dI| <= eps treated as zero/noise
     int   dyn_deriv_pattern_nonzero_n      = 2;       // lookback over last N non-zero derivs
     float dyn_deriv_pattern_sum_grip_ma    = 1500.0f;  // grip trigger if all-positive sum over lookback exceeds this
+    float dyn_deriv_pattern_sum_release_ma = 2000.0f;  // release trigger if all-positive sum over lookback exceeds this
     float dyn_deriv_pattern_sum_lower_ma   = 50.0f;  // lower trigger if all-positive sum over lookback exceeds this
 
     // StallGuard stall detection (J3 only, inside dynamicLower).
@@ -253,6 +262,7 @@
 
     float z_empirical_mm     = NAN;     // set by dynamiclower
     float servo_empirical_deg = NAN;    // set by dynamicgrip
+    float servo_release_empirical_deg = NAN; // set by dynamicrelease
     float dyn_z_servo_l_preset_mm = DEFAULT_DYN_Z_SERVO_L_PRESET_MM;
 
     bool ina219_ok   = false;
@@ -910,6 +920,11 @@
             if (isnan(servo_empirical_deg)) { Serial.println("# ERR servo_empirical not set yet"); return false; }
             out = servo_empirical_deg; return true;
         }
+        if (s == "servo_release_empirical")
+        {
+            if (isnan(servo_release_empirical_deg)) { Serial.println("# ERR servo_release_empirical not set yet"); return false; }
+            out = servo_release_empirical_deg; return true;
+        }
 
         char c = s.charAt(0);
         if (isDigit(c) || c == '-' || c == '+' || c == '.')
@@ -1194,6 +1209,180 @@
         return angle;
     }
 
+    float dynamicRelease(float angle_start_deg, float deriv_threshold, int N_steps, bool signed_only, float max_open_angle_deg)
+    {
+        if (!ina219_ok)
+        {
+            Serial.println("# ERR INA219 not available; cannot run dynamicrelease");
+            return NAN;
+        }
+
+        float angle_closed = max(angle_start_deg - dyn_release_close_offset_deg, (float)SERVO_ANGLE_MIN_DEG);
+        float release_max_angle_deg = constrain(max_open_angle_deg, SERVO_ANGLE_MIN_DEG, SERVO_ANGLE_MAX_DEG);
+        release_max_angle_deg = max(release_max_angle_deg, angle_closed);
+        if (N_steps < 1) N_steps = 1;
+        int pattern_n = constrain(dyn_deriv_pattern_nonzero_n, 1, DYN_DERIV_PATTERN_NONZERO_N_MAX);
+
+        Serial.print("# DYNAMIC RELEASE: angle_start="); Serial.print(angle_start_deg, 2);
+        Serial.print(" (close_from="); Serial.print(angle_closed, 2); Serial.print(")");
+        Serial.print(" deriv_thresh="); Serial.print(deriv_threshold, 2);
+        Serial.print(" N="); Serial.print(N_steps);
+        Serial.print(" max_open="); Serial.print(release_max_angle_deg, 2);
+        Serial.print(" mode="); Serial.println(signed_only ? "signed" : "magnitude");
+        Serial.print("# Secondary gate: last "); Serial.print(pattern_n);
+        Serial.print(" non-zero dI positive and sum > "); Serial.println(dyn_deriv_pattern_sum_release_ma, 2);
+        if (dyn_release_high_dip_enabled)
+        {
+            Serial.print("# Tertiary gate: arm above "); Serial.print(dyn_release_high_arm_ma, 2);
+            Serial.print(" mA, trigger on dip >= "); Serial.print(dyn_release_high_dip_ma, 2);
+            Serial.println(" mA");
+        }
+
+        writeServoFractional(angle_closed);
+        delay(DYN_SETTLE_MS);
+        Serial.println("# Opening gripper - derivative trigger active. Send any line to cancel.");
+
+        float angle = angle_closed;
+        float c_prev = NAN;
+        int   consec = 0;
+        float recent_nz_derivs[DYN_DERIV_PATTERN_NONZERO_N_MAX] = {0};
+        int   recent_nz_count = 0;
+        bool  high_dip_armed = false;
+        float high_dip_peak_ma = NAN;
+        unsigned long t_start = millis();
+        unsigned long next_sample = millis();
+
+        while (angle < release_max_angle_deg)
+        {
+            if (drainSerialAsCancel())
+            {
+                Serial.println("# CANCELLED.");
+                return NAN;
+            }
+            if ((millis() - t_start) > DYN_GRIP_TIMEOUT_MS)
+            {
+                Serial.println("# ERR dynamicrelease: timeout reached without contact");
+                return NAN;
+            }
+
+            unsigned long now = millis();
+            if ((long)(now - next_sample) < 0) continue;
+            next_sample = now + DYN_SAMPLE_PERIOD_MS;
+
+            float c = ina219.getCurrent_mA();
+
+            if (dyn_release_high_dip_enabled)
+            {
+                if (!high_dip_armed)
+                {
+                    if (c >= dyn_release_high_arm_ma)
+                    {
+                        high_dip_armed = true;
+                        high_dip_peak_ma = c;
+                    }
+                }
+                else
+                {
+                    if (c > high_dip_peak_ma) high_dip_peak_ma = c;
+                }
+            }
+
+            if (isnan(c_prev))
+            {
+                c_prev = c;
+                plotterDeriv(c, 0.0f, deriv_threshold, 0, -1);
+                angle += dyn_release_deg_per_sample_runtime;
+                writeServoFractional(angle);
+                continue;
+            }
+
+            float deriv = c - c_prev;
+            c_prev = c;
+
+            bool above = signed_only ? (deriv > deriv_threshold)
+                                     : (fabs(deriv) > deriv_threshold);
+            consec = above ? consec + 1 : 0;
+
+            if (fabs(deriv) > dyn_deriv_nonzero_eps_ma)
+            {
+                if (recent_nz_count < DYN_DERIV_PATTERN_NONZERO_N_MAX)
+                {
+                    recent_nz_derivs[recent_nz_count++] = deriv;
+                }
+                else
+                {
+                    for (int i = 0; i < DYN_DERIV_PATTERN_NONZERO_N_MAX - 1; i++)
+                        recent_nz_derivs[i] = recent_nz_derivs[i + 1];
+                    recent_nz_derivs[DYN_DERIV_PATTERN_NONZERO_N_MAX - 1] = deriv;
+                }
+            }
+
+            bool pattern_hit = false;
+            if (recent_nz_count >= pattern_n)
+            {
+                bool all_neg = true;
+                float sum = 0.0f;
+                int start_idx = recent_nz_count - pattern_n;
+                for (int i = start_idx; i < recent_nz_count; i++)
+                {
+                    float d = recent_nz_derivs[i];
+                    if (d >= 0.0f) { all_neg = false; break; }
+                    sum += d;
+                }
+                // sum is negative on release; trip when it goes past -threshold.
+                pattern_hit = all_neg && (sum < -dyn_deriv_pattern_sum_release_ma);
+            }
+
+            bool high_dip_hit = false;
+            if (dyn_release_high_dip_enabled && high_dip_armed)
+            {
+                high_dip_hit = (high_dip_peak_ma - c) >= dyn_release_high_dip_ma;
+            }
+
+            plotterDeriv(c, deriv, deriv_threshold, consec, -1);
+
+            if (consec >= N_steps || pattern_hit || high_dip_hit)
+            {
+                Serial.print("# Trigger source: ");
+                if (consec >= N_steps) Serial.println("derivative consecutive gate");
+                else if (pattern_hit)  Serial.println("non-zero derivative pattern gate");
+                else                   Serial.println("high-current dip gate");
+                Serial.print("# RELEASE detected at angle = ");
+                Serial.print(angle, 2); Serial.println(" deg");
+
+                float final_angle = angle;
+                if (dyn_release_post_contact_extra_open_deg > 0.0f)
+                {
+                    final_angle = min(release_max_angle_deg,
+                                      angle + dyn_release_post_contact_extra_open_deg);
+                    if (final_angle > angle + 1e-6f)
+                    {
+                        Serial.print("# Release clearance: ");
+                        Serial.print(angle, 2);
+                        Serial.print(" -> ");
+                        Serial.print(final_angle, 2);
+                        Serial.println(" deg");
+                        writeServoFractional(final_angle);
+                    }
+                }
+                servo_release_empirical_deg = final_angle;
+                Serial.print("# Stored servo_release_empirical = ");
+                Serial.print(servo_release_empirical_deg, 2); Serial.println(" deg");
+                return final_angle;
+            }
+
+            angle += dyn_release_deg_per_sample_runtime;
+            writeServoFractional(angle);
+        }
+
+        Serial.print("# WARN dynamicrelease: reached max angle (");
+        Serial.print(release_max_angle_deg, 2); Serial.println(") without contact");
+        servo_release_empirical_deg = angle;
+        Serial.print("# Stored servo_release_empirical = ");
+        Serial.print(servo_release_empirical_deg, 2); Serial.println(" deg");
+        return angle;
+    }
+
     // ============================================================
     //  NEW: DYNAMIC LOWER (J3)
     // ============================================================
@@ -1383,6 +1572,10 @@
         if (isnan(servo_empirical_deg)) Serial.println("<unset>");
         else { Serial.print(servo_empirical_deg, 2); Serial.println(" deg"); }
 
+        Serial.print("# servo_release_empirical= ");
+        if (isnan(servo_release_empirical_deg)) Serial.println("<unset>");
+        else { Serial.print(servo_release_empirical_deg, 2); Serial.println(" deg"); }
+
         Serial.print("# servo (current)= "); Serial.print(currentServoAngleDeg, 2); Serial.println(" deg");
         Serial.print("# l_preset      = "); Serial.print(dyn_z_servo_l_preset_mm, 2); Serial.println(" mm");
         Serial.print("# J3    (current)= "); Serial.print(j3StepsToMm(J3.currentPosition()), 2); Serial.println(" mm");
@@ -1406,7 +1599,7 @@
         Serial.println("#");
         Serial.println("# Servo:");
         Serial.println("#   SERVO <angle>           integer 10..70 (original)");
-        Serial.println("#   servo = <expr>          fractional deg, accepts servo_empirical");
+        Serial.println("#   servo = <expr>          fractional deg, accepts servo_empirical, servo_release_empirical");
         Serial.println("#");
         Serial.println("# Prismatic J3 (mm above mechanical bottom):");
         Serial.println("#   J3 = <expr>             e.g. J3 = 200, J3 = z_empirical, J3 = z_empirical + 30");
@@ -1417,16 +1610,22 @@
         Serial.println("#     deriv_thresh: mA/sample spike to detect; N: consecutive samples required");
         Serial.println("#     servo_deg optional; signed=1 for positive-only derivative (default 0=magnitude)");
         Serial.println("#   dynamicgrip <angle_start> <deriv_thresh> <N> [<signed>]  -> sets servo_empirical");
+        Serial.println("#   dynamicrelease <angle_start> <deriv_thresh> <N> [<signed> [<max_open_deg>]]  -> sets servo_release_empirical");
         Serial.println("#   dynset? | dynshow        print dynamic tuning settings");
         Serial.println("#   dynset <key> <value>     set dynamic tuning value");
-        Serial.println("#     keys: dg_start_deg dl_start_mm deriv_thresh_ma deriv_n_steps_grip deriv_n_steps_lower signed_only");
-        Serial.println("#           dl_servo_deg(current|deg) grip_open_offset_deg grip_deg_per_sample");
+        Serial.println("#     keys: dg_start_deg dr_start_deg dl_start_mm deriv_thresh_ma");
+        Serial.println("#           deriv_n_steps_grip deriv_n_steps_release deriv_n_steps_lower signed_only");
+        Serial.println("#           dl_servo_deg(current|deg) grip_open_offset_deg release_close_offset_deg");
+        Serial.println("#           grip_deg_per_sample release_deg_per_sample");
         Serial.println("#           grip_object_squishable grip_post_contact_extra_close_deg");
+        Serial.println("#           release_post_contact_extra_open_deg");
+        Serial.println("#           release_high_dip_enabled release_high_arm_ma release_high_dip_ma");
         Serial.println("#           lower_speed_mm_s deriv_nonzero_eps_ma pattern_nonzero_n");
-        Serial.println("#           pattern_sum_grip_ma pattern_sum_lower_ma");
+        Serial.println("#           pattern_sum_grip_ma pattern_sum_release_ma pattern_sum_lower_ma");
         Serial.println("#   set_l_preset <mm>       runtime set for z compensation (z += l_preset*cos(servo))");
-        Serial.println("#   Aliases: DL / DG");
+        Serial.println("#   Aliases: DL / DG / DR");
         Serial.println("#   Defaults are from dynset (DG uses dg_start_deg; DL uses dl_start_mm).");
+        Serial.println("#   DR auto-defaults to (servo_empirical - 5 deg) if a grip has run; else dr_start_deg.");
         Serial.println("#   Cancel: send any line (just press Enter).");
         Serial.println("#");
         Serial.println("# Stall detection (J3, dynamicLower only):");
@@ -1499,24 +1698,33 @@
     {
         Serial.println("# Dynamic settings:");
         Serial.print("#   dg_start_deg      = "); Serial.println(dyn_default_dg_start_deg, 3);
+        Serial.print("#   dr_start_deg      = "); Serial.println(dyn_default_dr_start_deg, 3);
         Serial.print("#   dl_start_mm       = "); Serial.println(dyn_default_dl_start_mm, 3);
         Serial.print("#   deriv_thresh_ma   = "); Serial.println(dyn_default_deriv_thresh_ma, 3);
-        Serial.print("#   deriv_n_steps_grip  = "); Serial.println(dyn_default_deriv_n_steps_grip);
-        Serial.print("#   deriv_n_steps_lower = "); Serial.println(dyn_default_deriv_n_steps_lower);
+        Serial.print("#   deriv_n_steps_grip    = "); Serial.println(dyn_default_deriv_n_steps_grip);
+        Serial.print("#   deriv_n_steps_release = "); Serial.println(dyn_default_deriv_n_steps_release);
+        Serial.print("#   deriv_n_steps_lower   = "); Serial.println(dyn_default_deriv_n_steps_lower);
         Serial.print("#   signed_only       = "); Serial.println(dyn_default_signed_only ? 1 : 0);
         Serial.print("#   dl_servo_deg      = ");
         if (isnan(dyn_default_dl_servo_deg)) Serial.println("current");
         else Serial.println(dyn_default_dl_servo_deg, 3);
 
-        Serial.print("#   grip_open_offset_deg = "); Serial.println(dyn_grip_open_offset_deg, 3);
-        Serial.print("#   grip_deg_per_sample  = "); Serial.println(dyn_grip_deg_per_sample_runtime, 4);
-        Serial.print("#   lower_speed_mm_s     = "); Serial.println(dyn_lower_speed_mm_s_runtime, 3);
-        Serial.print("#   grip_object_squishable = "); Serial.println(dyn_grip_object_squishable ? 1 : 0);
+        Serial.print("#   grip_open_offset_deg      = "); Serial.println(dyn_grip_open_offset_deg, 3);
+        Serial.print("#   release_close_offset_deg   = "); Serial.println(dyn_release_close_offset_deg, 3);
+        Serial.print("#   grip_deg_per_sample       = "); Serial.println(dyn_grip_deg_per_sample_runtime, 4);
+        Serial.print("#   release_deg_per_sample    = "); Serial.println(dyn_release_deg_per_sample_runtime, 4);
+        Serial.print("#   lower_speed_mm_s          = "); Serial.println(dyn_lower_speed_mm_s_runtime, 3);
+        Serial.print("#   grip_object_squishable    = "); Serial.println(dyn_grip_object_squishable ? 1 : 0);
         Serial.print("#   grip_post_contact_extra_close_deg = "); Serial.println(dyn_grip_post_contact_extra_close_deg, 3);
+        Serial.print("#   release_post_contact_extra_open_deg = "); Serial.println(dyn_release_post_contact_extra_open_deg, 3);
+        Serial.print("#   release_high_dip_enabled  = "); Serial.println(dyn_release_high_dip_enabled ? 1 : 0);
+        Serial.print("#   release_high_arm_ma       = "); Serial.println(dyn_release_high_arm_ma, 3);
+        Serial.print("#   release_high_dip_ma       = "); Serial.println(dyn_release_high_dip_ma, 3);
 
         Serial.print("#   deriv_nonzero_eps_ma   = "); Serial.println(dyn_deriv_nonzero_eps_ma, 3);
         Serial.print("#   pattern_nonzero_n      = "); Serial.println(dyn_deriv_pattern_nonzero_n);
         Serial.print("#   pattern_sum_grip_ma    = "); Serial.println(dyn_deriv_pattern_sum_grip_ma, 3);
+        Serial.print("#   pattern_sum_release_ma = "); Serial.println(dyn_deriv_pattern_sum_release_ma, 3);
         Serial.print("#   pattern_sum_lower_ma   = "); Serial.println(dyn_deriv_pattern_sum_lower_ma, 3);
 
         Serial.println("# StallGuard settings (J3, dynamicLower only):");
@@ -1552,6 +1760,11 @@
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset dg_start_deg"); return; }
             dyn_default_dg_start_deg = constrain(f, SERVO_ANGLE_MIN_DEG, SERVO_ANGLE_MAX_DEG);
         }
+        else if (key == "dr_start_deg")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset dr_start_deg"); return; }
+            dyn_default_dr_start_deg = constrain(f, SERVO_ANGLE_MIN_DEG, SERVO_ANGLE_MAX_DEG);
+        }
         else if (key == "dl_start_mm")
         {
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset dl_start_mm"); return; }
@@ -1567,6 +1780,11 @@
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset deriv_n_steps_grip"); return; }
             dyn_default_deriv_n_steps_grip = max(1, (int)f);
         }
+        else if (key == "deriv_n_steps_release")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset deriv_n_steps_release"); return; }
+            dyn_default_deriv_n_steps_release = max(1, (int)f);
+        }
         else if (key == "deriv_n_steps_lower")
         {
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset deriv_n_steps_lower"); return; }
@@ -1574,10 +1792,11 @@
         }
         else if (key == "deriv_n_steps")
         {
-            // Backward-compatible alias: set both at once.
+            // Backward-compatible alias: set all at once.
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset deriv_n_steps"); return; }
             int n = max(1, (int)f);
             dyn_default_deriv_n_steps_grip = n;
+            dyn_default_deriv_n_steps_release = n;
             dyn_default_deriv_n_steps_lower = n;
         }
         else if (key == "signed_only")
@@ -1599,10 +1818,20 @@
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset grip_open_offset_deg"); return; }
             dyn_grip_open_offset_deg = max(0.0f, f);
         }
+        else if (key == "release_close_offset_deg")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset release_close_offset_deg"); return; }
+            dyn_release_close_offset_deg = max(0.0f, f);
+        }
         else if (key == "grip_deg_per_sample")
         {
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset grip_deg_per_sample"); return; }
             dyn_grip_deg_per_sample_runtime = max(0.001f, f);
+        }
+        else if (key == "release_deg_per_sample")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset release_deg_per_sample"); return; }
+            dyn_release_deg_per_sample_runtime = max(0.001f, f);
         }
         else if (key == "lower_speed_mm_s")
         {
@@ -1619,6 +1848,26 @@
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset grip_post_contact_extra_close_deg"); return; }
             dyn_grip_post_contact_extra_close_deg = max(0.0f, f);
         }
+        else if (key == "release_post_contact_extra_open_deg")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset release_post_contact_extra_open_deg"); return; }
+            dyn_release_post_contact_extra_open_deg = max(0.0f, f);
+        }
+        else if (key == "release_high_dip_enabled")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset release_high_dip_enabled"); return; }
+            dyn_release_high_dip_enabled = (f != 0.0f);
+        }
+        else if (key == "release_high_arm_ma")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset release_high_arm_ma"); return; }
+            dyn_release_high_arm_ma = max(0.0f, f);
+        }
+        else if (key == "release_high_dip_ma")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset release_high_dip_ma"); return; }
+            dyn_release_high_dip_ma = max(0.0f, f);
+        }
         else if (key == "deriv_nonzero_eps_ma")
         {
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset deriv_nonzero_eps_ma"); return; }
@@ -1634,6 +1883,11 @@
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset pattern_sum_grip_ma"); return; }
             dyn_deriv_pattern_sum_grip_ma = max(0.0f, f);
         }
+        else if (key == "pattern_sum_release_ma")
+        {
+            if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset pattern_sum_release_ma"); return; }
+            dyn_deriv_pattern_sum_release_ma = max(0.0f, f);
+        }
         else if (key == "pattern_sum_lower_ma")
         {
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset pattern_sum_lower_ma"); return; }
@@ -1641,10 +1895,11 @@
         }
         else if (key == "pattern_sum_ma")
         {
-            // Backward-compatible alias: set both thresholds at once.
+            // Backward-compatible alias: set all thresholds at once.
             if (!parseValueExpression(val, f)) { Serial.println("# ERR dynset pattern_sum_ma"); return; }
             f = max(0.0f, f);
             dyn_deriv_pattern_sum_grip_ma = f;
+            dyn_deriv_pattern_sum_release_ma = f;
             dyn_deriv_pattern_sum_lower_ma = f;
         }
         else if (key == "sg_enabled")
@@ -1838,6 +2093,65 @@
                 return;
             }
             float result = dynamicGrip(vals[0], vals[1], (int)vals[2], vals[3] != 0.0f);
+            if (!isnan(result)) Serial.println("DONE");
+            return;
+        }
+
+        // ---- dynamicrelease / dr ----
+        // DR <angle_start> <deriv_thresh> <N_steps> [<signed_0_1> [<max_open_deg>]]
+        // or keyword-only cap with defaults: DR max_open_deg=<deg>
+        if (cmd.startsWith("dynamicrelease") || cmd.startsWith("dr"))
+        {
+            int sp = cmd.startsWith("dynamicrelease") ? 14 : 2;
+            String args = cmd.substring(sp); args.trim();
+
+            // Resolve start angle: prefer servo_empirical - 5 (start 5 deg more
+            // closed than the grip-contact angle) when a grip has been done;
+            // otherwise fall back to the static dr_start_deg.
+            float dr_start_default = dyn_default_dr_start_deg;
+            if (!isnan(servo_empirical_deg))
+            {
+                dr_start_default = max((float)SERVO_ANGLE_MIN_DEG,
+                                       servo_empirical_deg - 5.0f);
+            }
+
+            // Optional keyword-only max cap while keeping all other defaults.
+            if (args.startsWith("max_open_deg=") || args.startsWith("max_open=") || args.startsWith("max="))
+            {
+                int eq = args.indexOf('=');
+                String cap_tok = args.substring(eq + 1);
+                cap_tok.trim();
+                float cap_deg;
+                if (!parseValueExpression(cap_tok, cap_deg))
+                {
+                    Serial.println("# ERR dynamicrelease: bad max_open_deg");
+                    return;
+                }
+                float result = dynamicRelease(
+                    dr_start_default,
+                    dyn_default_deriv_thresh_ma,
+                    dyn_default_deriv_n_steps_release,
+                    dyn_default_signed_only,
+                    cap_deg
+                );
+                if (!isnan(result)) Serial.println("DONE");
+                return;
+            }
+
+            const float defs[5] = {
+                dr_start_default,
+                dyn_default_deriv_thresh_ma,
+                (float)dyn_default_deriv_n_steps_release,
+                dyn_default_signed_only ? 1.0f : 0.0f,
+                (float)SERVO_ANGLE_MAX_DEG
+            };
+            float vals[5];
+            if (!parseFloatArgs(args, vals, 5, defs))
+            {
+                Serial.println("# ERR dynamicrelease: bad args");
+                return;
+            }
+            float result = dynamicRelease(vals[0], vals[1], (int)vals[2], vals[3] != 0.0f, vals[4]);
             if (!isnan(result)) Serial.println("DONE");
             return;
         }

@@ -212,6 +212,8 @@ def build_object_candidate(
         )
     elif PICK_PHI_MODE == "overhead_minor_axis":
         pick_phi, pick_phi_source = None, "overhead_minor_axis_pending"
+    elif PICK_PHI_MODE == "overhead_semi_minor_projected":
+        pick_phi, pick_phi_source = None, "overhead_semi_minor_projected_pending"
     elif PICK_PHI_MODE == "mask_minor_axis_pointcloud":
         pick_phi, pick_phi_source = estimate_pick_phi_from_mask_minor_axis(
             yolo_det, points_cam, point_uv_px, bundle

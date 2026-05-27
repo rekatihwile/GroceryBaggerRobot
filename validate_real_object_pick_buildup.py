@@ -96,6 +96,7 @@ PICK_PHI_MODE: str = "centroid_shortest_ray_parallel"
 VALID_PICK_PHI_MODES = {
     "centroid_longest_ray_perp",
     "centroid_shortest_ray_parallel",
+    "overhead_semi_minor_projected",
     "pointcloud_shortest_path",
     "overhead_minor_axis",
     "mask_minor_axis_pointcloud",

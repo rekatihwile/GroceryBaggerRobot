@@ -11,9 +11,9 @@ from vision.pointcloud import estimate_mask_centroid_ray_angle_deg
 from vision.yolo_segmenter import YOLODetection
 
 
-PICK_PHI_MODE: str = "overhead_minor_axis"
+PICK_PHI_MODE: str = "centroid_shortest_ray_parallel"
 OVERHEAD_USE_SEMIMINOR_AXIS_FOR_PHI: bool = True
-USE_CONFIDENCE_PHI_BLEND: bool = True
+USE_CONFIDENCE_PHI_BLEND: bool = False
 PHI_DISAGREEMENT_WARN_DEG: float = 25.0
 PHI_MIN_CONFIDENCE: float = 0.20
 PHI_ASPECT_DECAY: float = 0.8
@@ -117,6 +117,43 @@ def _overhead_centroid_ray_phi(
     return phi, f"{source}_overhead"
 
 
+def _overhead_semi_minor_phi(
+    det: YOLODetection,
+    z_mm: float,
+    bundle: dict,
+) -> tuple[float | None, str]:
+    """Project the YOLO semi-minor axis direction through the overhead homography to robot XY.
+
+    Unlike _overhead_centroid_ray_phi (which ray-casts to find the short/long
+    chord), this uses the YOLO minor_axis_angle_deg directly — same projection
+    math, different input angle.
+    """
+    image_angle = float(det.minor_axis_angle_deg)
+    if not np.isfinite(image_angle):
+        return None, "overhead_semi_minor_nan"
+
+    centroid = np.asarray(det.centroid_px, dtype=np.float64).reshape(2)
+    theta = np.deg2rad(image_angle)
+    axis_px = np.array([np.cos(theta), np.sin(theta)], dtype=np.float64)
+    half_len_px = max(12.0, 0.5 * float(det.minor_axis_length_px))
+    p0 = centroid - axis_px * half_len_px
+    p1 = centroid + axis_px * half_len_px
+
+    try:
+        xy0, *_ = project_overhead_centroid_to_robot_xy(p0, z_mm, bundle)
+        xy1, *_ = project_overhead_centroid_to_robot_xy(p1, z_mm, bundle)
+    except Exception as exc:
+        print(f"[PHI] overhead semi-minor projection failed: {exc}")
+        return None, "overhead_semi_minor_projection_failed"
+
+    delta = np.asarray(xy1, dtype=np.float64).reshape(2) - np.asarray(xy0, dtype=np.float64).reshape(2)
+    if not np.all(np.isfinite(delta)) or float(np.linalg.norm(delta)) < 1e-6:
+        return None, "overhead_semi_minor_degenerate_delta"
+
+    phi = float(np.degrees(np.arctan2(delta[1], delta[0])) % 180.0)
+    return phi, "overhead_semi_minor_projected"
+
+
 def resolve_pick_phi(
     debug: CandidateDebug,
     overhead_det: YOLODetection | None,
@@ -125,6 +162,24 @@ def resolve_pick_phi(
     """Resolve cand.pick_phi_deg and fill debug phi metadata."""
     cand = debug.candidate
     stereo_z = max(0.0, float(cand.object_robot_xyz_raw[2]))
+
+    if PICK_PHI_MODE == "overhead_semi_minor_projected":
+        phi: float | None = None
+        source: str = "overhead_semi_minor_unavailable"
+        if overhead_det is not None:
+            phi, source = _overhead_semi_minor_phi(overhead_det, stereo_z, bundle)
+        if phi is None:
+            phi = cand.pick_phi_deg
+            source = cand.pick_phi_source
+        cand.pick_phi_deg = None if phi is None else float(phi)
+        cand.pick_phi_source = source
+        debug.phi_stereo_deg = cand.pick_phi_deg
+        debug.phi_overhead_deg = cand.pick_phi_deg if overhead_det is not None else None
+        debug.phi_stereo_confidence = None
+        debug.phi_overhead_confidence = None
+        debug.phi_disagreement_deg = None
+        debug.phi_blend_source = source
+        return
 
     if PICK_PHI_MODE in {"centroid_longest_ray_perp", "centroid_shortest_ray_parallel"}:
         select = "longest" if PICK_PHI_MODE == "centroid_longest_ray_perp" else "shortest"
