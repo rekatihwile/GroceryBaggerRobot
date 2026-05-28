@@ -216,6 +216,7 @@ def execute_place_sequence(
     move_fn: MoveFn | None = None,
     check_pose_safe_fn: PoseCheckFn | None = None,
     on_start_place_motion: Callable[[], None] | None = None,
+    on_start_place_descent: Callable[[], None] | None = None,
     on_after_release: Callable[[], None] | None = None,
     label_prefix: str = "[PLACE]",
 ) -> bool:
@@ -272,6 +273,14 @@ def execute_place_sequence(
         check_pose_safe_fn=check_pose_safe_fn,
     ):
         return False
+
+    if on_start_place_descent is not None:
+        print(f"{label_prefix} starting place-descent callback")
+        try:
+            on_start_place_descent()
+        except Exception as exc:
+            print(f"{label_prefix} WARN: place-descent callback failed: {exc}")
+
     if not _move_checked(
         robot,
         f"{label_prefix} descend",

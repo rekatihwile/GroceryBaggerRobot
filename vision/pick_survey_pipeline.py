@@ -33,6 +33,12 @@ RAFT_DOWNSCALE: float = 1.0
 RAFT_MIXED_PRECISION: bool = True
 MIN_MASK_AREA_PX: int = 500
 
+# OpenCV/DirectShow webcams can return queued frames if the stream has not been
+# drained while stereo burst + RAFT work is running. Discard a few frames before
+# using the overhead image for matching/display.
+OVERHEAD_FRESH_READ_DISCARD_FRAMES: int = 6
+OVERHEAD_FRESH_READ_DELAY_S: float = 0.02
+
 
 def load_vision(device_info: Any) -> tuple[YOLOSegmenter, RAFTStereoRunner]:
     weights = YOLO_WEIGHTS_PATH if YOLO_WEIGHTS_PATH.is_file() else YOLO_FALLBACK_WEIGHTS_PATH
@@ -81,6 +87,27 @@ def _match_overhead_to_candidates(
         apply_xy_blend(dbg, bundle)
 
 
+def _read_fresh_overhead(overhead: Any) -> tuple[bool, Any]:
+    last_ok = False
+    last_frame = None
+    discard_count = max(0, int(OVERHEAD_FRESH_READ_DISCARD_FRAMES))
+    total_reads = discard_count + 1
+    if discard_count > 0:
+        print(f"[OVERHEAD] flushing {discard_count} queued frame(s) before survey match")
+
+    for i in range(total_reads):
+        ok, frame = overhead.read()
+        if ok and frame is not None:
+            last_ok = True
+            last_frame = frame
+        if i < total_reads - 1 and OVERHEAD_FRESH_READ_DELAY_S > 0.0:
+            time.sleep(float(OVERHEAD_FRESH_READ_DELAY_S))
+
+    if last_ok:
+        print(f"[OVERHEAD] fresh frame read after {total_reads} read(s)")
+    return last_ok, last_frame
+
+
 def run_survey(
     overhead: Any,
     stereo: Any,
@@ -119,7 +146,7 @@ def run_survey(
     for idx, dbg in enumerate(candidates, start=1):
         dbg.candidate.index = idx
 
-    ok_oh, overhead_frame = overhead.read()
+    ok_oh, overhead_frame = _read_fresh_overhead(overhead)
     if ok_oh and overhead_frame is not None:
         overhead_dets = yolo.segment(overhead_frame)
         if TARGET_CLASS_NAMES:

@@ -94,7 +94,7 @@
     const int   J3_LIFT_DIR           = -1;
     const int   J3_DESCEND_DIR        = -J3_LIFT_DIR;                       // +1 when lift dir = -1
 
-    const int J3_RUN_CURRENT_MA        = 1400;
+    const int J3_RUN_CURRENT_MA        = 2000;
     const int J3_SOFT_DROP_CURRENT_MA  = 1600;
 
     const bool J3_DROP_BEFORE_LIFT = true;
@@ -368,7 +368,7 @@
         setupDriver(driver2, 1700);
         setupDriver(driver3, J3_RUN_CURRENT_MA);
         driver3.TCOOLTHRS(0xFFFFF);  // enable StallGuard at all relevant speeds for J3
-        setupDriver(driver4, 2000);
+        setupDriver(driver4, 1400);
     }
 
     void enableMotors(bool state)

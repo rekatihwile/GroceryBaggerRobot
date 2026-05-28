@@ -21,8 +21,8 @@
     "floor_z_mm": 0.05890437855880748,
     "place_z_mm": 0.05890437855880748,
     "phi_deg": 0.07563126375008267,
-    "width_mm": 120.0,
-    "depth_mm": 120.0,
+    "width_mm": 100.0,
+    "depth_mm": 100.0,
     "notes": "Default test zone. Recalibrate with scripts/manual_control/calibrate_place_zone.py."
   }
 }

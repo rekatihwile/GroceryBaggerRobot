@@ -43,6 +43,7 @@ class BestCandidateConfig:
     placed_overlap_margin_mm: float = 25.0
 
     min_volume_mm3: float = 1.0
+    max_volume_mm3: float | None = 3_000_000.0
 
 
 @dataclass
@@ -271,6 +272,8 @@ def _evaluate_candidate(
 
     if not np.isfinite(volume) or volume < float(config.min_volume_mm3):
         reject.append(f"volume_too_small:{volume:.1f}<{config.min_volume_mm3:.1f}mm3")
+    if config.max_volume_mm3 is not None and np.isfinite(volume) and volume > float(config.max_volume_mm3):
+        reject.append(f"volume_absurdly_large:{volume / 1000.0:.1f}>{float(config.max_volume_mm3) / 1000.0:.1f}cm3")
 
     return CandidateDecision(
         dbg=dbg,
