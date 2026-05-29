@@ -14,7 +14,7 @@ import math
 from typing import Any
 
 
-PACKING_CLEARANCE_CM: float = 1.0
+PACKING_CLEARANCE_CM: float = 0.1
 HEIGHT_PADDING_CM: float = 1.0
 MIN_FOOTPRINT_CM: float = 2.0
 MAX_REASONABLE_FOOTPRINT_CM: float = 40.0

@@ -24,5 +24,18 @@
     "width_mm": 100.0,
     "depth_mm": 100.0,
     "notes": "Default test zone. Recalibrate with scripts/manual_control/calibrate_place_zone.py."
+  },
+  "New Bag Test": {
+    "name": "New Bag Test",
+    "center_xy_mm": [
+      100.0,
+      740.0
+    ],
+    "floor_z_mm": 0.05890437855880748,
+    "place_z_mm": -200.0,
+    "phi_deg": 0,
+    "width_mm": 290, 
+    "depth_mm": 175,
+    "notes": "Default test zone. Recalibrate with scripts/manual_control/calibrate_place_zone.py."
   }
 }

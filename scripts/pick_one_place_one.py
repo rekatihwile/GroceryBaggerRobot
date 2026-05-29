@@ -30,17 +30,17 @@ from motion.z_safety_config import (
 BUNDLE_PATH = Path("robot_calibration_bundle.npz")
 STEREO_CALIBRATION_PATH = Path("stereo_calibration.npz")
 
-YOLO_WEIGHTS_PATH = Path("yolo_weights/Validate_Only_100_Training_Best.pt")
+YOLO_WEIGHTS_PATH = Path("full_data.pt")
 YOLO_FALLBACK_WEIGHTS_PATH = Path("yolo_weights/validate_V2.pt")
 
 RAFT_ROOT = Path("RAFT-Stereo")
 RAFT_CHECKPOINT_PATH = Path("RAFT-Stereo/models/raftstereo-middlebury.pth")
 
 SURFACE_ZONE_CONFIG_PATH = Path("config/surface_zones.json")
-PLACE_SURFACE_ZONE_NAME = "Test_Zone_Place_V1"
+PLACE_SURFACE_ZONE_NAME = "New Bag Test"
 
 PLACE_ZONE_CONFIG_PATH = Path("config/place_zones.json")
-PLACE_ZONE_NAME = "Test_Zone_Place_V1"
+PLACE_ZONE_NAME = "New Bag Test"
 
 YOLO_IMGSZ: int = 640
 YOLO_CONF: float = 0.35
@@ -130,7 +130,7 @@ STEREO_DRAW_H_PX: int = 390
 STATUS_H_PX: int = 140
 WINDOW: str = "Pick One Place One Repeatability"
 
-CLAW_OPEN_DEG: int = 65
+CLAW_OPEN_DEG: int = 60
 CLAW_CLOSED_DEG: int = 0
 ENABLE_DYNAMIC_PICK = True
 USE_DYNAMIC_PICK_HEIGHT = False
@@ -174,9 +174,9 @@ Z_GROUND_MODEL_PATH = Path("data/z_ground_calibration/z_ground_model_latest.json
 REQUIRE_OVERHEAD_XY_FOR_PICK: bool = False
 REFUSE_PICK_IF_TOO_FEW_POINTS: bool = True
 
-X_SURVEY = 100.0
-Y_SURVEY = 100.0
-Z_SURVEY = 250.0
+X_SURVEY = 500.0
+Y_SURVEY = -50.0
+Z_SURVEY = 270.0
 
 # ============================================================
 

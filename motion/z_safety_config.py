@@ -15,11 +15,11 @@ import math
 @dataclass(frozen=True)
 class ZSafetyConfig:
     # Shared travel/approach/retract ceiling for real robot scripts.
-    Z_MAX_MM: float = 270.0
+    Z_MAX_MM: float = 295.0
 
     # Robot Z is the commanded J3/EE robot coordinate.
     # This is the absolute minimum robot Z allowed during pick/grasp motion.
-    PLATFORM_MIN_GRIPPER_Z_MM: float = 135.0
+    PLATFORM_MIN_GRIPPER_Z_MM: float = 140.0
     MIN_PICK_GRASP_Z_MM: float | None = None
     # Place/release motion gets its own floor so the object can be released
     # near the calibrated surface height instead of being forced up to 140 mm.
@@ -28,7 +28,7 @@ class ZSafetyConfig:
     # Physical offset from robot Z to the empty gripper tip for pick planning.
     # Chosen as the shared workspace value from scripts/pick_one_place_one.py.
     # Recalibrate here if the gripper geometry changes.
-    GRIPPER_OFFSET_MM: float = 135.0
+    GRIPPER_OFFSET_MM: float = 165.0
 
     # Conservative handling for flat or noisy object height estimates.
     MIN_PLACE_ITEM_HEIGHT_MM: float = 0.0

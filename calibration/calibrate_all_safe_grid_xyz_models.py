@@ -127,7 +127,7 @@ def floor_height_to_robot_z_mm(floor_height_mm: float) -> float:
 ENABLE_STEREO_LOGGING = True
 
 # Pick one. Start with "smoke" first.
-SCAN_MODE = "global_coarse"
+SCAN_MODE = "staging_refined"
 # SCAN_MODE = "global_coarse"
 # SCAN_MODE = "staging_refined"
 # SCAN_MODE = "local_dense"
@@ -140,14 +140,14 @@ SCAN_PRESETS = {
         "z": [DEFAULT_TRAVEL_Z_MM],
     },
     "global_coarse": {
-        "x": list(range(50, 400, 150)),
-        "y": list(range(100, 600, 100)),
-        "z": list(range(0, 100, 50)),
+        "x": list(range(40, 380, 150)),
+        "y": list(range(40, 515, 100)),
+        "z": list(range(0, 200, 50)),
     },
     "staging_refined": {
-        "x": list(range(75, 500, 25)),
-        "y": list(range(225, 600, 25)),
-        "z": [0, 25.0],
+        "x": list(range(40, 380, 100)),
+        "y": list(range(40, 515, 150)),
+        "z": [0, 50, 150,200],
     },
     "local_dense": {
         "x": list(range(200, 401, 10)),

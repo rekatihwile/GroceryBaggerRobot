@@ -29,8 +29,8 @@ NO_CANDIDATE_RETRY_DELAY_S = 1.0
 
 # Placement geometry. Object 1 goes at the saved zone center. Object 2 is adjacent.
 # Object 3 stacks above object 1, object 4 stacks above object 2, and so on.
-PAD_X_MM = 10.0
-PAD_Y_MM = 10.0
+PAD_X_MM = 5.0
+PAD_Y_MM = 5.0
 PAD_Z_MM = 0.0
 ADJACENT_DIRECTION = "left"
 
@@ -40,7 +40,7 @@ PREFETCH_NEXT_SURVEY_ON_PLACE_DESCENT = True
 PREFETCH_PLACE_DESCENT_DELAY_S = 0.0
 SELECTION_DISPLAY_HOLD_S = 0.25
 HOLD_WINDOW_AFTER_RUN = True
-CLEAR_BOX_Z_MM = 275.0
+CLEAR_BOX_Z_MM = 295.0
 CLEAR_BOX_MOVE_TIME_S = 1.25
 
 # Overhead camera freshness. If the overhead view looks stale/phantom, increase

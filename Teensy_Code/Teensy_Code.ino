@@ -94,7 +94,7 @@
     const int   J3_LIFT_DIR           = -1;
     const int   J3_DESCEND_DIR        = -J3_LIFT_DIR;                       // +1 when lift dir = -1
 
-    const int J3_RUN_CURRENT_MA        = 2000;
+    const int J3_RUN_CURRENT_MA        = 2500;
     const int J3_SOFT_DROP_CURRENT_MA  = 1600;
 
     const bool J3_DROP_BEFORE_LIFT = true;
@@ -134,17 +134,17 @@
     // NORMAL MOTION SETTINGS
     // ----------------------------------------
 
-    const float J1_NORMAL_MAX_SPEED = 40000.0;
-    const float J1_NORMAL_ACCEL     = 9000.0;
+    const float J1_NORMAL_MAX_SPEED = 50000.0;
+    const float J1_NORMAL_ACCEL     = 7000.0;
 
-    const float J2_NORMAL_MAX_SPEED = 40000.0;
-    const float J2_NORMAL_ACCEL     = 9000.0;
+    const float J2_NORMAL_MAX_SPEED = 50000.0;
+    const float J2_NORMAL_ACCEL     = 7000.0;
 
-    const float J3_NORMAL_MAX_SPEED = 12000.0;
-    const float J3_NORMAL_ACCEL     = 9000.0;
+    const float J3_NORMAL_MAX_SPEED = 10000.0;
+    const float J3_NORMAL_ACCEL     = 5000.0;
 
     const float J4_NORMAL_MAX_SPEED = 40000.0;
-    const float J4_NORMAL_ACCEL     = 20000.0;
+    const float J4_NORMAL_ACCEL     = 1000.0;
 
     const float SYNC_MIN_TIME_SEC = 0.20;
 
