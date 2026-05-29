@@ -28,6 +28,15 @@ class BestCandidateConfig:
     workspace_y_min_mm: float | None = 0.0
     workspace_y_max_mm: float | None = 900.0
 
+    # Optional hard gates on robot-frame centroid derived from calibrated 3D estimate.
+    require_robotframe_centroid_xy_in_platform_bounds: bool = False
+    robotframe_centroid_x_min_mm: float | None = None
+    robotframe_centroid_x_max_mm: float | None = None
+    robotframe_centroid_y_min_mm: float | None = None
+    robotframe_centroid_y_max_mm: float | None = None
+    require_min_robotframe_centroid_z: bool = False
+    min_robotframe_centroid_z_mm: float | None = None
+
     use_robot_reach_check: bool = True
     robot_reach_margin_mm: float = 2.0
     require_soft_pose_safe: bool = True
@@ -250,6 +259,21 @@ def _evaluate_candidate(
             except Exception as exc:
                 notes.append(f"soft_pose_check_failed:{exc}")
 
+    robot_xyz = _candidate_robot_xyz(c)
+    if config.require_robotframe_centroid_xy_in_platform_bounds:
+        if robot_xyz is None:
+            reject.append("missing_robotframe_centroid_xy")
+        else:
+            _check_bounds("robotframe_centroid_x", float(robot_xyz[0]), config.robotframe_centroid_x_min_mm, config.robotframe_centroid_x_max_mm, reject)
+            _check_bounds("robotframe_centroid_y", float(robot_xyz[1]), config.robotframe_centroid_y_min_mm, config.robotframe_centroid_y_max_mm, reject)
+
+    if config.require_min_robotframe_centroid_z:
+        z_floor = config.min_robotframe_centroid_z_mm
+        if robot_xyz is None:
+            reject.append("missing_robotframe_centroid_z")
+        elif z_floor is not None and float(robot_xyz[2]) < float(z_floor):
+            reject.append(f"robotframe_centroid_z<{float(z_floor):.1f}")
+
     center_r = _image_center_norm_radius(dbg)
     if config.center_gate_enabled:
         if center_r is None:
@@ -300,6 +324,20 @@ def _candidate_xy(candidate: Any) -> np.ndarray | None:
     if not np.all(np.isfinite(out)):
         return None
     return out
+
+
+def _candidate_robot_xyz(candidate: Any) -> np.ndarray | None:
+    for attr in ("object_robot_xyz_corrected", "object_robot_xyz_raw", "target_cam_xyz"):
+        xyz = getattr(candidate, attr, None)
+        if xyz is None:
+            continue
+        arr = np.asarray(xyz, dtype=np.float64).reshape(-1)
+        if arr.size < 3:
+            continue
+        out = arr[:3].astype(np.float64)
+        if np.all(np.isfinite(out)):
+            return out
+    return None
 
 
 def _compute_cluster_center(

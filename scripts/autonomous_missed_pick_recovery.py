@@ -33,13 +33,25 @@ NO_CANDIDATE_RETRY_COUNT = 1
 NO_CANDIDATE_RETRY_DELAY_S = 1.0
 NO_CANDIDATE_AFTER_RETRIES_MODE = "continuous"  # "continuous", "wait_for_resume", or "stop"
 NO_CANDIDATE_RESUME_KEY = "r"
+# When no candidate is found and continuous mode re-surveys, move to the survey/home
+# pose first so the arm is out of the camera's view.
+NO_CANDIDATE_RECOVERY_MOVE_ENABLED = True
 
-# Placement geometry. Object 1 goes at the saved zone center. Object 2 is adjacent.
-# Object 3 stacks above object 1, object 4 stacks above object 2, and so on.
+# Placement geometry and packing fit.
+# Lower PAD_X_MM / PAD_Y_MM / PAD_Z_MM to make packing tighter across all objects.
+# Increase them if you want more conservative spacing between packed AABBs.
 PAD_X_MM = 0
 PAD_Y_MM = 0
-PAD_Z_MM = 0.0
+PAD_Z_MM = 20.0
 ADJACENT_DIRECTION = "left"
+# Efficient packing chooses the best object for the next slot by fit first, then volume.
+EFFICIENT_PACKING_ENABLED = True
+EFFICIENT_PACKING_REQUIRE_SLOT_FIT = True
+# Small XY nudges are tried only when they improve slot fit.
+PLACE_XY_NUDGE_ENABLED = True
+PLACE_XY_NUDGE_STEP_MM = 5.0
+PLACE_XY_NUDGE_MAX_MM = 20.0
+# The gripper footprint check still enforces bag containment.
 PLACE_REQUIRE_GRIPPER_FOOTPRINT_INSIDE_BAG = True
 PLACE_GRIPPER_FOOTPRINT_WIDTH_MM = 60.0
 PLACE_GRIPPER_FOOTPRINT_LENGTH_L_MM = 70.0
@@ -125,6 +137,13 @@ BEST_WORKSPACE_X_MIN_MM = PLATFORM_X_MIN_MM
 BEST_WORKSPACE_X_MAX_MM = PLATFORM_X_MAX_MM
 BEST_WORKSPACE_Y_MIN_MM = PLATFORM_Y_MIN_MM
 BEST_WORKSPACE_Y_MAX_MM = PLATFORM_Y_MAX_MM
+BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS = True
+BEST_ROBOTFRAME_CENTROID_X_MIN_MM = PLATFORM_X_MIN_MM
+BEST_ROBOTFRAME_CENTROID_X_MAX_MM = PLATFORM_X_MAX_MM
+BEST_ROBOTFRAME_CENTROID_Y_MIN_MM = PLATFORM_Y_MIN_MM
+BEST_ROBOTFRAME_CENTROID_Y_MAX_MM = PLATFORM_Y_MAX_MM
+BEST_REQUIRE_MIN_ROBOTFRAME_CENTROID_Z = False
+BEST_MIN_ROBOTFRAME_CENTROID_Z_MM = -200.0
 BEST_USE_ROBOT_REACH_CHECK = True
 BEST_ROBOT_REACH_MARGIN_MM = 2.0
 BEST_REQUIRE_SOFT_POSE_SAFE = True
@@ -148,12 +167,12 @@ PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 3.0
 PLACE_Z_POLICY_MODE = "negative_bin_hang"  # "shared", "negative_bin_hang", or "negative_bin_simple"
 PLACE_NEGATIVE_BIN_PLATFORM_Z_MM = -200.0
 PLACE_NEGATIVE_BIN_MIN_RELEASE_Z_MM = 0.0
-PLACE_NEGATIVE_BIN_USE_EXISTING_STACK = False
+PLACE_NEGATIVE_BIN_USE_EXISTING_STACK = True
 PLACE_NEGATIVE_BIN_HANG_WEIGHT = 0.70
 PLACE_NEGATIVE_BIN_SIMPLE_WEIGHT = 0.30
 PLACE_NEGATIVE_BIN_CLEARANCE_MM = 0.0
 PLACE_NEGATIVE_BIN_INCLUDE_RELEASE_GAP_PADDING = False
-USE_DYNAMIC_RELEASE_FOR_PLACE = True
+USE_DYNAMIC_RELEASE_FOR_PLACE = False
 DYNAMIC_RELEASE_TIMEOUT_S = 45.0
 
 # Placement should only crack the claw open so it does not hit the object already placed.
@@ -167,6 +186,8 @@ WINDOW = "Autonomous Pick Place - Largest Volume"
 # ============================================================
 
 import copy
+import io
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 import math
 import threading
@@ -302,6 +323,18 @@ class PlaceabilityOverlayEntry:
     reason: str
 
 
+@dataclass
+class OptimizedPlaceTarget:
+    target_xy_mm: np.ndarray
+    target_phi_deg: float
+    footprint_clearance_mm: float
+    aabb_clearance_mm: float
+    fit_clearance_mm: float
+    nudge_xy_mm: np.ndarray
+    can_place: bool
+    reason: str
+
+
 def _best_candidate_config() -> BestCandidateConfig:
     return BestCandidateConfig(
         require_positive_platform_xy=BEST_REQUIRE_POSITIVE_PLATFORM_XY,
@@ -311,6 +344,13 @@ def _best_candidate_config() -> BestCandidateConfig:
         workspace_x_max_mm=BEST_WORKSPACE_X_MAX_MM,
         workspace_y_min_mm=BEST_WORKSPACE_Y_MIN_MM,
         workspace_y_max_mm=BEST_WORKSPACE_Y_MAX_MM,
+        require_robotframe_centroid_xy_in_platform_bounds=BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS,
+        robotframe_centroid_x_min_mm=BEST_ROBOTFRAME_CENTROID_X_MIN_MM,
+        robotframe_centroid_x_max_mm=BEST_ROBOTFRAME_CENTROID_X_MAX_MM,
+        robotframe_centroid_y_min_mm=BEST_ROBOTFRAME_CENTROID_Y_MIN_MM,
+        robotframe_centroid_y_max_mm=BEST_ROBOTFRAME_CENTROID_Y_MAX_MM,
+        require_min_robotframe_centroid_z=BEST_REQUIRE_MIN_ROBOTFRAME_CENTROID_Z,
+        min_robotframe_centroid_z_mm=BEST_MIN_ROBOTFRAME_CENTROID_Z_MM,
         use_robot_reach_check=BEST_USE_ROBOT_REACH_CHECK,
         robot_reach_margin_mm=BEST_ROBOT_REACH_MARGIN_MM,
         require_soft_pose_safe=BEST_REQUIRE_SOFT_POSE_SAFE,
@@ -403,6 +443,12 @@ def _candidate_phi_deg(robot, dbg: CandidateDebug) -> float:
         return float(robot.fk()[3])
     except Exception:
         return 0.0
+
+
+def _aabb_from_object_candidate_quiet(candidate, default_label: str):
+    # aabb_from_object_candidate prints verbose diagnostics; suppress in tight loops.
+    with io.StringIO() as _sink, redirect_stdout(_sink):
+        return aabb_from_object_candidate(candidate, default_label=default_label)
 
 
 def _bbox_area_px(bbox_xyxy: tuple[float, float, float, float] | None) -> float | None:
@@ -687,7 +733,9 @@ def _held_bottom_hang_below_gripper_mm(held_object: CandidateDebug | None, objec
 def _estimate_existing_bag_stack_top_mm(destination_surface_z_mm: float) -> float:
     if not PLACE_NEGATIVE_BIN_USE_EXISTING_STACK:
         return 0.0
-    return max(0.0, float(destination_surface_z_mm) - float(PLACE_NEGATIVE_BIN_PLATFORM_Z_MM))
+    # destination_surface_z_mm is height above bag floor (not robot_z).
+    # robot_z of stack top = PLACE_NEGATIVE_BIN_PLATFORM_Z_MM + destination.
+    return max(0.0, float(destination_surface_z_mm))
 
 
 def _apply_negative_bin_place_policy(place_plan, held_object: CandidateDebug, object_height_mm: float, destination_surface_z_mm: float):
@@ -1046,6 +1094,25 @@ def _footprint_signed_edge_clearance_mm(
     return float(np.min(signed_clearances)), corners, min_xy, max_xy
 
 
+def _aabb_signed_edge_clearance_mm(
+    center_xy_mm: np.ndarray,
+    size_xy_mm: np.ndarray,
+    *,
+    surface_zone: dict,
+) -> float:
+    min_xy, max_xy = _bag_bounds_xy(surface_zone)
+    center = np.asarray(center_xy_mm, dtype=np.float64).reshape(2)
+    size_xy = np.asarray(size_xy_mm, dtype=np.float64).reshape(2)
+    half = 0.5 * size_xy
+    signed_clearances = np.array([
+        center[0] - half[0] - min_xy[0],
+        max_xy[0] - (center[0] + half[0]),
+        center[1] - half[1] - min_xy[1],
+        max_xy[1] - (center[1] + half[1]),
+    ], dtype=np.float64)
+    return float(np.min(signed_clearances))
+
+
 def _evaluate_place_phi_for_edge_clearance(
     held_object: CandidateDebug | None,
     *,
@@ -1117,6 +1184,154 @@ def _evaluate_place_phi_for_edge_clearance(
     return best_phi, best_clearance, best_inside
 
 
+def _xy_nudge_candidates() -> list[np.ndarray]:
+    if not PLACE_XY_NUDGE_ENABLED:
+        return [np.array([0.0, 0.0], dtype=np.float64)]
+
+    step = max(0.0, float(PLACE_XY_NUDGE_STEP_MM))
+    max_nudge = max(0.0, float(PLACE_XY_NUDGE_MAX_MM))
+    if step <= 0.0 or max_nudge <= 0.0:
+        return [np.array([0.0, 0.0], dtype=np.float64)]
+
+    offsets = [0.0]
+    current = step
+    while current <= max_nudge + 1e-6:
+        offsets.append(float(current))
+        current += step
+
+    candidates: list[np.ndarray] = [np.array([0.0, 0.0], dtype=np.float64)]
+    for dx in offsets:
+        for dy in offsets:
+            for sign_x in (-1.0, 1.0):
+                for sign_y in (-1.0, 1.0):
+                    if dx == 0.0 and dy == 0.0:
+                        continue
+                    candidates.append(np.array([sign_x * dx, sign_y * dy], dtype=np.float64))
+
+    unique: list[np.ndarray] = []
+    seen: set[tuple[float, float]] = set()
+    for offset in candidates:
+        key = (round(float(offset[0]), 6), round(float(offset[1]), 6))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(offset)
+    unique.sort(key=lambda arr: (float(arr[0] ** 2 + arr[1] ** 2), float(arr[0]), float(arr[1])))
+    return unique
+
+
+def _evaluate_slot_fit(
+    held_object: CandidateDebug | None,
+    *,
+    target_xy_mm: np.ndarray,
+    base_phi_deg: float,
+    surface_zone: dict,
+    label: str,
+    verbose: bool,
+) -> OptimizedPlaceTarget:
+    base_xy = np.asarray(target_xy_mm, dtype=np.float64).reshape(2)
+    base_phi = _normalize_phi_deg(base_phi_deg)
+    servo_deg = _held_initial_servo_deg(held_object)
+    footprint_length_mm, footprint_width_mm = _gripper_footprint_size_mm(servo_deg)
+    footprint_size_xy_mm = np.array([footprint_length_mm, footprint_width_mm], dtype=np.float64)
+    try:
+        candidate_box = _aabb_from_object_candidate_quiet(held_object.candidate, default_label="candidate_fit") if held_object is not None else None
+        candidate_size_xy_mm = (
+            np.asarray(candidate_box.size_xyz_mm, dtype=np.float64).reshape(3)[:2]
+            if candidate_box is not None
+            else footprint_size_xy_mm.copy()
+        )
+    except Exception:
+        candidate_box = None
+        candidate_size_xy_mm = footprint_size_xy_mm.copy()
+
+    if verbose:
+        print("[PLACE FIT SEARCH]")
+        print(
+            f"label={label} base_xy=({base_xy[0]:.1f},{base_xy[1]:.1f}) base_phi={base_phi:.1f} "
+            f"servo_deg={servo_deg:.1f} footprint={footprint_length_mm:.1f}x{footprint_width_mm:.1f} "
+            f"candidate_aabb_xy={candidate_size_xy_mm[0]:.1f}x{candidate_size_xy_mm[1]:.1f}"
+        )
+
+    best: OptimizedPlaceTarget | None = None
+    for offset in _xy_nudge_candidates():
+        nudged_xy = base_xy + offset
+        for phi in (base_phi,) if not PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE else [base_phi + float(v) for v in PLACE_ROTATION_CANDIDATE_OFFSETS_DEG]:
+            phi_norm = _normalize_phi_deg(phi)
+            footprint_clearance_mm, _corners, _min_xy, _max_xy = _footprint_signed_edge_clearance_mm(
+                nudged_xy,
+                phi_norm,
+                footprint_length_mm,
+                footprint_width_mm,
+                surface_zone=surface_zone,
+            )
+            aabb_clearance_mm = _aabb_signed_edge_clearance_mm(
+                nudged_xy,
+                candidate_size_xy_mm,
+                surface_zone=surface_zone,
+            )
+            fit_clearance_mm = min(float(footprint_clearance_mm), float(aabb_clearance_mm))
+            can_place = bool(fit_clearance_mm >= 0.0)
+            candidate = OptimizedPlaceTarget(
+                target_xy_mm=nudged_xy.copy(),
+                target_phi_deg=float(phi_norm),
+                footprint_clearance_mm=float(footprint_clearance_mm),
+                aabb_clearance_mm=float(aabb_clearance_mm),
+                fit_clearance_mm=float(fit_clearance_mm),
+                nudge_xy_mm=offset.copy(),
+                can_place=can_place,
+                reason="ok" if can_place else "fit_or_footprint_outside_bag",
+            )
+            if verbose:
+                print(
+                    f"  phi={candidate.target_phi_deg:.1f} nudge=({candidate.nudge_xy_mm[0]:.1f},{candidate.nudge_xy_mm[1]:.1f}) "
+                    f"footprint_clearance={candidate.footprint_clearance_mm:.1f} aabb_clearance={candidate.aabb_clearance_mm:.1f} "
+                    f"fit_clearance={candidate.fit_clearance_mm:.1f} can_place={candidate.can_place}"
+                )
+
+            if best is None:
+                best = candidate
+                continue
+
+            if candidate.can_place != best.can_place:
+                if candidate.can_place:
+                    best = candidate
+                continue
+
+            if candidate.fit_clearance_mm > best.fit_clearance_mm + 1e-6:
+                best = candidate
+                continue
+
+            if abs(candidate.fit_clearance_mm - best.fit_clearance_mm) <= 1e-6:
+                candidate_shift = float(np.linalg.norm(candidate.nudge_xy_mm))
+                best_shift = float(np.linalg.norm(best.nudge_xy_mm))
+                if candidate_shift < best_shift - 1e-6:
+                    best = candidate
+                    continue
+                if abs(candidate_shift - best_shift) <= 1e-6 and float(candidate.footprint_clearance_mm) > float(best.footprint_clearance_mm) + 1e-6:
+                    best = candidate
+
+    if best is None:
+        best = OptimizedPlaceTarget(
+            target_xy_mm=base_xy.copy(),
+            target_phi_deg=float(base_phi),
+            footprint_clearance_mm=float("nan"),
+            aabb_clearance_mm=float("nan"),
+            fit_clearance_mm=float("nan"),
+            nudge_xy_mm=np.array([0.0, 0.0], dtype=np.float64),
+            can_place=False,
+            reason="no_candidates",
+        )
+
+    if verbose:
+        print(
+            f"[PLACE FIT SEARCH] selected_xy=({best.target_xy_mm[0]:.1f},{best.target_xy_mm[1]:.1f}) "
+            f"selected_phi={best.target_phi_deg:.1f} nudge=({best.nudge_xy_mm[0]:.1f},{best.nudge_xy_mm[1]:.1f}) "
+            f"fit_clearance={best.fit_clearance_mm:.1f} can_place={best.can_place}"
+        )
+    return best
+
+
 def _choose_place_phi_for_edge_clearance(
     held_object: CandidateDebug | None,
     *,
@@ -1134,6 +1349,49 @@ def _choose_place_phi_for_edge_clearance(
         verbose=True,
     )
     return best_phi
+
+
+def _optimize_place_target_for_slot(
+    held_object: CandidateDebug | None,
+    *,
+    target_xy_mm: np.ndarray,
+    base_phi_deg: float,
+    surface_zone: dict,
+    label: str,
+    verbose: bool,
+) -> OptimizedPlaceTarget:
+    if not EFFICIENT_PACKING_ENABLED:
+        base_xy = np.asarray(target_xy_mm, dtype=np.float64).reshape(2)
+        base_phi = _normalize_phi_deg(base_phi_deg)
+        servo_deg = _held_initial_servo_deg(held_object)
+        footprint_length_mm, footprint_width_mm = _gripper_footprint_size_mm(servo_deg)
+        footprint_clearance_mm, _corners, _min_xy, _max_xy = _footprint_signed_edge_clearance_mm(
+            base_xy,
+            base_phi,
+            footprint_length_mm,
+            footprint_width_mm,
+            surface_zone=surface_zone,
+        )
+        aabb_clearance_mm = _aabb_signed_edge_clearance_mm(base_xy, np.array([footprint_length_mm, footprint_width_mm], dtype=np.float64), surface_zone=surface_zone)
+        fit_clearance_mm = min(float(footprint_clearance_mm), float(aabb_clearance_mm))
+        return OptimizedPlaceTarget(
+            target_xy_mm=base_xy,
+            target_phi_deg=base_phi,
+            footprint_clearance_mm=float(footprint_clearance_mm),
+            aabb_clearance_mm=float(aabb_clearance_mm),
+            fit_clearance_mm=float(fit_clearance_mm),
+            nudge_xy_mm=np.array([0.0, 0.0], dtype=np.float64),
+            can_place=bool(fit_clearance_mm >= 0.0),
+            reason="efficient_packing_disabled",
+        )
+    return _evaluate_slot_fit(
+        held_object,
+        target_xy_mm=target_xy_mm,
+        base_phi_deg=base_phi_deg,
+        surface_zone=surface_zone,
+        label=label,
+        verbose=verbose,
+    )
 
 
 def _validate_gripper_footprint_inside_bag(
@@ -1795,6 +2053,128 @@ def _select_best_for_state(
     return result
 
 
+def _select_best_for_state_by_slot_fit(
+    state: SurveyState,
+    *,
+    object_i: int,
+    robot,
+    placed_boxes: list,
+    config: BestCandidateConfig,
+    surface_zone: dict,
+    base_xy: np.ndarray,
+    base_phi_deg: float,
+    column_xy_primary: np.ndarray | None,
+    column_xy_secondary: np.ndarray | None,
+    target_limit: int,
+) -> tuple[BestCandidateResult, dict[int, PlaceabilityOverlayEntry]]:
+    result = choose_best_candidate(state, config=config, robot=robot, placed_boxes=placed_boxes)
+    result.print_debug("[BEST]")
+    if not state.candidates:
+        return result, {}
+
+    overlay: dict[int, PlaceabilityOverlayEntry] = {}
+    scored: list[tuple[float, float, float, int, CandidateDebug, OptimizedPlaceTarget]] = []
+
+    def compute_target_for_candidate(cand_dbg: CandidateDebug) -> OptimizedPlaceTarget:
+        raw_box = _aabb_from_object_candidate_quiet(cand_dbg.candidate, default_label=f"object{object_i}_overlay")
+        if object_i == 1:
+            target_xy = np.asarray(base_xy, dtype=np.float64).reshape(2).copy()
+            target_phi = float(base_phi_deg)
+        elif object_i == 2:
+            if not placed_boxes:
+                raise ValueError("waiting_for_reference_box")
+            moving_padded = pad_aabb(raw_box, PAD_X_MM, PAD_Y_MM, PAD_Z_MM)
+            adjacent_plan = compute_adjacent_placement(
+                reference_padded_box=placed_boxes[-1],
+                moving_padded_box=moving_padded,
+                direction=ADJACENT_DIRECTION,
+                surface_z_mm=float(surface_zone["surface_z_mm"]),
+                place_phi_deg=float(base_phi_deg),
+            )
+            target_xy = adjacent_plan.target_center_xy_mm
+            target_phi = float(adjacent_plan.target_phi_deg)
+        else:
+            if column_xy_primary is None or column_xy_secondary is None:
+                raise ValueError("waiting_for_column_anchor")
+            target_xy = np.asarray(column_xy_primary if object_i % 2 == 1 else column_xy_secondary, dtype=np.float64).reshape(2).copy()
+            target_phi = float(base_phi_deg)
+
+        return _optimize_place_target_for_slot(
+            cand_dbg,
+            target_xy_mm=target_xy,
+            base_phi_deg=target_phi,
+            surface_zone=surface_zone,
+            label=f"object{object_i}",
+            verbose=False,
+        )
+
+    for idx, cand_dbg in enumerate(state.candidates):
+        try:
+            optimized = compute_target_for_candidate(cand_dbg)
+            decision = next((d for d in result.decisions if d.dbg is cand_dbg), None)
+            if decision is None or not decision.passed:
+                reject_reason = "selector_rejected"
+                if decision is not None and decision.reject_reasons:
+                    reject_reason = ";".join(decision.reject_reasons[:2])
+                overlay[idx] = PlaceabilityOverlayEntry(
+                    can_place=False,
+                    target_xy_mm=optimized.target_xy_mm.copy(),
+                    target_phi_deg=float(optimized.target_phi_deg),
+                    clearance_mm=float(optimized.fit_clearance_mm),
+                    reason=reject_reason,
+                )
+                continue
+            overlay[idx] = PlaceabilityOverlayEntry(
+                can_place=bool(optimized.can_place),
+                target_xy_mm=optimized.target_xy_mm.copy(),
+                target_phi_deg=float(optimized.target_phi_deg),
+                clearance_mm=float(optimized.fit_clearance_mm),
+                reason=optimized.reason,
+            )
+            if optimized.can_place:
+                volume_mm3 = float(decision.volume_mm3)
+                scored.append((float(optimized.fit_clearance_mm), volume_mm3, -float(np.dot(optimized.nudge_xy_mm, optimized.nudge_xy_mm)), int(getattr(cand_dbg.candidate, 'index', -1)), cand_dbg, optimized))
+        except Exception as exc:
+            overlay[idx] = PlaceabilityOverlayEntry(
+                can_place=False,
+                target_xy_mm=None,
+                target_phi_deg=None,
+                clearance_mm=None,
+                reason=str(exc),
+            )
+
+    if not scored:
+        # Do not hard-stop the run: fall back to largest valid candidate and let
+        # placement logic continue trying to find a feasible target.
+        if result.selected_decision is not None:
+            result.selected = result.selected_decision.dbg
+            state.selected_index = state.candidates.index(result.selected)
+            print(
+                f"[BEST PACK WARN] no slot-fit candidate for object {object_i}; "
+                f"falling back to largest valid candidate [{result.selected_decision.candidate_index}] "
+                f"{result.selected_decision.class_name}."
+            )
+        else:
+            result.selected = None
+            result.selected_decision = None
+        return result, overlay
+
+    scored.sort(key=lambda item: (item[0], item[1], item[2], -item[3]), reverse=True)
+    best = scored[0]
+    selected_dbg = best[4]
+    selected_optimized = best[5]
+    best_decision = next((d for d in result.decisions if d.dbg is selected_dbg), None)
+    if best_decision is not None:
+        result.selected = selected_dbg
+        result.selected_decision = best_decision
+        state.selected_index = state.candidates.index(selected_dbg)
+        print(
+            f"[BEST PACK] object={object_i} selected={best_decision.candidate_index} {best_decision.class_name} "
+            f"fit_clearance={selected_optimized.fit_clearance_mm:.1f}mm volume={best_decision.volume_cm3:.1f}cm3"
+        )
+    return result, overlay
+
+
 def _print_knob_group(title: str, lines: list[str]) -> None:
     print(f"\n[{title}]")
     for line in lines:
@@ -1834,10 +2214,13 @@ def print_knob_overview() -> None:
         ],
     )
     _print_knob_group(
-        "3. Place location / bag geometry",
+        "3. Packing conservatism / slot fit",
         [
             f"PLACE_SURFACE_ZONE_NAME={_pick_one_mod.PLACE_SURFACE_ZONE_NAME!r}",
             f"ADJACENT_DIRECTION={ADJACENT_DIRECTION!r}",
+            f"EFFICIENT_PACKING_ENABLED={EFFICIENT_PACKING_ENABLED}",
+            f"EFFICIENT_PACKING_REQUIRE_SLOT_FIT={EFFICIENT_PACKING_REQUIRE_SLOT_FIT}",
+            f"PLACE_XY_NUDGE_ENABLED={PLACE_XY_NUDGE_ENABLED} step={PLACE_XY_NUDGE_STEP_MM} max={PLACE_XY_NUDGE_MAX_MM}",
             f"PLACE_REQUIRE_GRIPPER_FOOTPRINT_INSIDE_BAG={PLACE_REQUIRE_GRIPPER_FOOTPRINT_INSIDE_BAG}",
             f"PLACE_GRIPPER_FOOTPRINT_WIDTH_MM={PLACE_GRIPPER_FOOTPRINT_WIDTH_MM}",
             f"PLACE_GRIPPER_FOOTPRINT_LENGTH_L_MM={PLACE_GRIPPER_FOOTPRINT_LENGTH_L_MM}",
@@ -1845,7 +2228,7 @@ def print_knob_overview() -> None:
             f"PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE={PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE}",
             f"PLACE_ROTATION_CANDIDATE_OFFSETS_DEG={PLACE_ROTATION_CANDIDATE_OFFSETS_DEG}",
             f"USE_PICK_PHI_FOR_PLACE={_pick_one_mod.USE_PICK_PHI_FOR_PLACE}",
-            "object1=zone center; object2=adjacent; object3+ stack on alternating columns",
+            "Lower PAD_* for tighter packing; higher values are more conservative spacing.",
         ],
     )
     _print_knob_group(
@@ -1865,6 +2248,10 @@ def print_knob_overview() -> None:
             f"platform_min=({BEST_PLATFORM_MIN_X_MM},{BEST_PLATFORM_MIN_Y_MM})",
             f"workspace_x=[{BEST_WORKSPACE_X_MIN_MM},{BEST_WORKSPACE_X_MAX_MM}]",
             f"workspace_y=[{BEST_WORKSPACE_Y_MIN_MM},{BEST_WORKSPACE_Y_MAX_MM}]",
+            f"robotframe_centroid_xy_gate={BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS}",
+            f"robotframe_centroid_x=[{BEST_ROBOTFRAME_CENTROID_X_MIN_MM},{BEST_ROBOTFRAME_CENTROID_X_MAX_MM}]",
+            f"robotframe_centroid_y=[{BEST_ROBOTFRAME_CENTROID_Y_MIN_MM},{BEST_ROBOTFRAME_CENTROID_Y_MAX_MM}]",
+            f"robotframe_centroid_z_min_gate={BEST_REQUIRE_MIN_ROBOTFRAME_CENTROID_Z} z_min={BEST_MIN_ROBOTFRAME_CENTROID_Z_MM}",
             f"BEST_USE_ROBOT_REACH_CHECK={BEST_USE_ROBOT_REACH_CHECK} margin={BEST_ROBOT_REACH_MARGIN_MM}",
             f"BEST_REQUIRE_SOFT_POSE_SAFE={BEST_REQUIRE_SOFT_POSE_SAFE} z={BEST_SOFT_POSE_CHECK_Z_MM}",
             f"BEST_CENTER_GATE_ENABLED={BEST_CENTER_GATE_ENABLED} radius={BEST_MAX_IMAGE_CENTER_NORM_RADIUS}",
@@ -2033,10 +2420,19 @@ def main() -> int:
         cand_dbg: CandidateDebug,
         *,
         object_i: int,
-    ) -> tuple[np.ndarray, float, str]:
-        raw_box = aabb_from_object_candidate(cand_dbg.candidate, default_label=f"object{object_i}_overlay")
+    ) -> OptimizedPlaceTarget:
+        raw_box = _aabb_from_object_candidate_quiet(cand_dbg.candidate, default_label=f"object{object_i}_overlay")
         if object_i == 1:
-            return np.asarray(base_xy, dtype=np.float64).reshape(2).copy(), float(place_phi), "base"
+            target_xy = np.asarray(base_xy, dtype=np.float64).reshape(2).copy()
+            target_phi = float(place_phi)
+            return _optimize_place_target_for_slot(
+                cand_dbg,
+                target_xy_mm=target_xy,
+                base_phi_deg=target_phi,
+                surface_zone=surface_zone,
+                label=f"object{object_i}_base",
+                verbose=False,
+            )
         if object_i == 2:
             if not placed_boxes:
                 raise ValueError("waiting_for_reference_box")
@@ -2048,12 +2444,26 @@ def main() -> int:
                 surface_z_mm=surface_z,
                 place_phi_deg=place_phi,
             )
-            return adjacent_plan.target_center_xy_mm.copy(), float(adjacent_plan.target_phi_deg), "adjacent"
+            return _optimize_place_target_for_slot(
+                cand_dbg,
+                target_xy_mm=adjacent_plan.target_center_xy_mm.copy(),
+                base_phi_deg=float(adjacent_plan.target_phi_deg),
+                surface_zone=surface_zone,
+                label=f"object{object_i}_adjacent",
+                verbose=False,
+            )
 
         if column_xy_primary is None or column_xy_secondary is None:
             raise ValueError("waiting_for_column_anchor")
         target_xy = column_xy_primary if object_i % 2 == 1 else column_xy_secondary
-        return np.asarray(target_xy, dtype=np.float64).reshape(2).copy(), float(place_phi), "stack"
+        return _optimize_place_target_for_slot(
+            cand_dbg,
+            target_xy_mm=np.asarray(target_xy, dtype=np.float64).reshape(2).copy(),
+            base_phi_deg=float(place_phi),
+            surface_zone=surface_zone,
+            label=f"object{object_i}_stack",
+            verbose=False,
+        )
 
     def build_placeability_overlay(
         display_state: SurveyState | None,
@@ -2067,21 +2477,13 @@ def main() -> int:
         overlay: dict[int, PlaceabilityOverlayEntry] = {}
         for idx, cand_dbg in enumerate(display_state.candidates):
             try:
-                target_xy_mm, base_phi_deg, reason = compute_candidate_place_target(cand_dbg, object_i=object_i)
-                target_phi_deg, clearance_mm, can_place = _evaluate_place_phi_for_edge_clearance(
-                    cand_dbg,
-                    target_xy_mm=target_xy_mm,
-                    base_phi_deg=base_phi_deg,
-                    surface_zone=surface_zone,
-                    label=f"overlay_object{object_i}_candidate{idx + 1}",
-                    verbose=False,
-                )
+                optimized = compute_candidate_place_target(cand_dbg, object_i=object_i)
                 overlay[idx] = PlaceabilityOverlayEntry(
-                    can_place=bool(can_place),
-                    target_xy_mm=target_xy_mm,
-                    target_phi_deg=float(target_phi_deg),
-                    clearance_mm=float(clearance_mm),
-                    reason=str(reason),
+                    can_place=bool(optimized.can_place),
+                    target_xy_mm=optimized.target_xy_mm.copy(),
+                    target_phi_deg=float(optimized.target_phi_deg),
+                    clearance_mm=float(optimized.fit_clearance_mm),
+                    reason=str(optimized.reason),
                 )
             except Exception as exc:
                 overlay[idx] = PlaceabilityOverlayEntry(
@@ -2408,12 +2810,27 @@ def main() -> int:
                 print(f"\n[FLOW] Object {i}/{'continuous' if run_until_no_valid_active() else target_limit}")
                 survey_state = get_survey_for_object(i)
 
-                selection = _select_best_for_state(
-                    survey_state,
-                    robot=robot,
-                    placed_boxes=placed_boxes,
-                    config=selector_config,
-                )
+                if EFFICIENT_PACKING_ENABLED:
+                    selection, _slot_overlay = _select_best_for_state_by_slot_fit(
+                        survey_state,
+                        object_i=i,
+                        robot=robot,
+                        placed_boxes=placed_boxes,
+                        config=selector_config,
+                        surface_zone=surface_zone,
+                        base_xy=base_xy,
+                        base_phi_deg=place_phi,
+                        column_xy_primary=column_xy_primary,
+                        column_xy_secondary=column_xy_secondary,
+                        target_limit=target_limit,
+                    )
+                else:
+                    selection = _select_best_for_state(
+                        survey_state,
+                        robot=robot,
+                        placed_boxes=placed_boxes,
+                        config=selector_config,
+                    )
 
                 retry_i = 0
                 while selection.selected is None and retry_i < int(NO_CANDIDATE_RETRY_COUNT):
@@ -2437,12 +2854,27 @@ def main() -> int:
                         )
                         time.sleep(0.05)
                     survey_state = run_survey_now(f"{flow_label(i)} retry {retry_i}")
-                    selection = _select_best_for_state(
-                        survey_state,
-                        robot=robot,
-                        placed_boxes=placed_boxes,
-                        config=selector_config,
-                    )
+                    if EFFICIENT_PACKING_ENABLED:
+                        selection, _slot_overlay = _select_best_for_state_by_slot_fit(
+                            survey_state,
+                            object_i=i,
+                            robot=robot,
+                            placed_boxes=placed_boxes,
+                            config=selector_config,
+                            surface_zone=surface_zone,
+                            base_xy=base_xy,
+                            base_phi_deg=place_phi,
+                            column_xy_primary=column_xy_primary,
+                            column_xy_secondary=column_xy_secondary,
+                            target_limit=target_limit,
+                        )
+                    else:
+                        selection = _select_best_for_state(
+                            survey_state,
+                            robot=robot,
+                            placed_boxes=placed_boxes,
+                            config=selector_config,
+                        )
 
                 set_status(selection.display_lines(max_lines=5))
                 _show_display(
@@ -2460,6 +2892,12 @@ def main() -> int:
                     print(f"[FLOW] no valid candidate for object {i} after {NO_CANDIDATE_RETRY_COUNT + 1} survey attempt(s)")
                     no_candidate_action = wait_for_resume_or_quit_after_no_candidate(i)
                     if no_candidate_action == "resume":
+                        if NO_CANDIDATE_RECOVERY_MOVE_ENABLED:
+                            print("[FLOW] no candidate: retracting to clear-box Z before survey/home move.")
+                            _raise_or_hold_safe_z(robot, "[FLOW] pre-recovery retract", CLEAR_BOX_Z_MM, CLEAR_BOX_MOVE_TIME_S)
+                            print("[FLOW] no candidate: moving to survey/home pose.")
+                            _move_to_recovery_pose(robot)
+                            _rehome_j3_if_requested(robot)
                         continue
                     print(f"[FLOW] stopping: no valid candidate for object {i}")
                     if run_until_no_valid_active() and str(NO_CANDIDATE_AFTER_RETRIES_MODE).strip().lower() != "stop":
@@ -2467,62 +2905,96 @@ def main() -> int:
                     run_ok = False
                     break
 
-                cand_dbg = selection.selected
-                c = cand_dbg.candidate
-                print(
-                    f"[FLOW] picking object {i}: candidate [{c.index}] {c.yolo.class_name} "
-                    f"xy=({c.target_xy[0]:.1f},{c.target_xy[1]:.1f})"
-                )
+                attempt: PickAttemptRecord | None = None
+                held = None
+                max_local_pick_attempts = max(1, min(5, len(survey_state.candidates)))
+                excluded_pick_indices: set[int] = set()
 
-                attempt = make_pick_attempt_record(object_i=i, cand_dbg=cand_dbg, robot=robot, attempt_number=1)
-                if not execute_pick_selected(robot, cand_dbg, bundle=bundle):
-                    print(f"[FLOW] object {i} pick failed")
-                    run_ok = False
-                    break
-                held = cand_dbg
+                for local_pick_try in range(1, max_local_pick_attempts + 1):
+                    if selection.selected is None:
+                        break
+
+                    cand_dbg = selection.selected
+                    c = cand_dbg.candidate
+                    c_idx = int(getattr(c, "index", -1))
+                    if c_idx in excluded_pick_indices:
+                        continue
+
+                    print(
+                        f"[FLOW] picking object {i}: candidate [{c.index}] {c.yolo.class_name} "
+                        f"xy=({c.target_xy[0]:.1f},{c.target_xy[1]:.1f}) "
+                        f"local_try={local_pick_try}/{max_local_pick_attempts}"
+                    )
+
+                    attempt = make_pick_attempt_record(object_i=i, cand_dbg=cand_dbg, robot=robot, attempt_number=1)
+                    if execute_pick_selected(robot, cand_dbg, bundle=bundle):
+                        held = cand_dbg
+                        break
+
+                    excluded_pick_indices.add(c_idx)
+                    print(
+                        f"[FLOW WARN] object {i} pick failed for candidate [{c.index}] {c.yolo.class_name}; "
+                        "trying next best candidate."
+                    )
+
+                    survey_state.candidates = [
+                        dbg
+                        for dbg in survey_state.candidates
+                        if int(getattr(dbg.candidate, "index", -1)) not in excluded_pick_indices
+                    ]
+                    if not survey_state.candidates:
+                        selection.selected = None
+                        selection.selected_decision = None
+                        break
+
+                    if EFFICIENT_PACKING_ENABLED:
+                        selection, _slot_overlay = _select_best_for_state_by_slot_fit(
+                            survey_state,
+                            object_i=i,
+                            robot=robot,
+                            placed_boxes=placed_boxes,
+                            config=selector_config,
+                            surface_zone=surface_zone,
+                            base_xy=base_xy,
+                            base_phi_deg=place_phi,
+                            column_xy_primary=column_xy_primary,
+                            column_xy_secondary=column_xy_secondary,
+                            target_limit=target_limit,
+                        )
+                    else:
+                        selection = _select_best_for_state(
+                            survey_state,
+                            robot=robot,
+                            placed_boxes=placed_boxes,
+                            config=selector_config,
+                        )
+
+                if held is None or attempt is None:
+                    print(f"[FLOW] object {i} pick failed for all local candidates; re-surveying current slot.")
+                    continue
 
                 raw_box = aabb_from_object_candidate(cand_dbg.candidate, default_label=f"object{i}")
                 object_height_mm = float(raw_box.size_xyz_mm[2])
 
                 destination_surface_for_call = float(surface_z)
                 below_top_z_mm: float | None = None
-                target_xy: np.ndarray
-                target_phi: float
-                adjacent_plan = None
 
+                optimized_target = compute_candidate_place_target(cand_dbg, object_i=i)
+                target_xy = optimized_target.target_xy_mm.copy()
+                target_phi = float(optimized_target.target_phi_deg)
                 if i == 1:
-                    target_xy = base_xy
-                    target_phi = place_phi
                     column_xy_primary = np.asarray(target_xy, dtype=np.float64).reshape(2)
-                    print(f"[FLOW] object1 target = base zone xy=({target_xy[0]:.1f},{target_xy[1]:.1f})")
                 elif i == 2:
-                    moving_padded = pad_aabb(raw_box, PAD_X_MM, PAD_Y_MM, PAD_Z_MM)
-                    adjacent_plan = compute_adjacent_placement(
-                        reference_padded_box=placed_boxes[-1],
-                        moving_padded_box=moving_padded,
-                        direction=ADJACENT_DIRECTION,
-                        surface_z_mm=surface_z,
-                        place_phi_deg=place_phi,
-                    )
-                    target_xy = adjacent_plan.target_center_xy_mm
-                    target_phi = adjacent_plan.target_phi_deg
                     column_xy_secondary = np.asarray(target_xy, dtype=np.float64).reshape(2)
-                    print(f"[FLOW] object2 adjacent target xyz = {adjacent_plan.target_center_xyz_mm.tolist()}")
-                else:
-                    if column_xy_primary is None or column_xy_secondary is None:
-                        print(f"[FLOW] missing column XY anchors for object {i}")
-                        run_ok = False
-                        break
-
+                print(
+                    f"[FLOW] object{i} optimized target xy=({target_xy[0]:.1f},{target_xy[1]:.1f}) "
+                    f"phi={target_phi:.1f} nudge=({optimized_target.nudge_xy_mm[0]:.1f},{optimized_target.nudge_xy_mm[1]:.1f}) "
+                    f"fit_clearance={optimized_target.fit_clearance_mm:.1f} can_place={optimized_target.can_place}"
+                )
+                if i >= 3 and len(placed_boxes) >= 1:
                     below_idx = i - 2
                     below_box = placed_boxes[below_idx - 1]
                     below_top_z_mm = float(below_box.raw_box.max_xyz_mm[2])
-
-                    if i % 2 == 1:
-                        target_xy = column_xy_primary
-                    else:
-                        target_xy = column_xy_secondary
-                    target_phi = place_phi
                     destination_surface_for_call = float(below_top_z_mm)
                     print(
                         f"[FLOW] object{i} stacking target (2-per-layer): "
@@ -2557,8 +3029,8 @@ def main() -> int:
                     label=f"object{i}",
                 ):
                     held = None
-                    run_ok = False
-                    break
+                    print("[FLOW] placement footprint gate failed; re-surveying current slot.")
+                    continue
 
                 place_status, miss_result = place_or_detect_miss(
                     held_object=held,
@@ -2617,7 +3089,7 @@ def main() -> int:
 
                     held = retry_held
                     retry_attempt = make_pick_attempt_record(object_i=i, cand_dbg=retry_held, robot=robot, attempt_number=2)
-                    retry_raw_box = aabb_from_object_candidate(retry_held.candidate, default_label=f"object{i}_retry")
+                    retry_raw_box = _aabb_from_object_candidate_quiet(retry_held.candidate, default_label=f"object{i}_retry")
                     retry_object_height_mm = float(retry_raw_box.size_xyz_mm[2])
 
                     if not _validate_gripper_footprint_inside_bag(
@@ -2665,28 +3137,23 @@ def main() -> int:
                 elif place_status != "placed":
                     print(f"[FLOW] object {i} place failed")
                     held = None
+                    if str(ON_RETRY_FAIL).lower() == "skip":
+                        print("[FLOW] ON_RETRY_FAIL='skip': re-surveying this bag slot after place failure.")
+                        continue
                     run_ok = False
                     break
 
                 if i == 1:
                     placed = _placed_occupancy_from_plan(
-                        center_xyz_mm=np.array([base_xy[0], base_xy[1], surface_z + 0.5 * object_height_mm], dtype=np.float64),
+                        center_xyz_mm=np.array([float(target_xy[0]), float(target_xy[1]), surface_z + 0.5 * object_height_mm], dtype=np.float64),
                         size_xyz_mm=raw_box.size_xyz_mm,
                         label="object1_placed",
                     )
                     placed_boxes.append(placed)
                 elif i == 2:
-                    if adjacent_plan is None:
-                        print("[FLOW] missing adjacent placement plan for object2")
-                        run_ok = False
-                        break
                     placed = _placed_occupancy_from_plan(
                         center_xyz_mm=np.array(
-                            [
-                                float(adjacent_plan.target_center_xy_mm[0]),
-                                float(adjacent_plan.target_center_xy_mm[1]),
-                                surface_z + 0.5 * object_height_mm,
-                            ],
+                            [float(target_xy[0]), float(target_xy[1]), surface_z + 0.5 * object_height_mm],
                             dtype=np.float64,
                         ),
                         size_xyz_mm=raw_box.size_xyz_mm,

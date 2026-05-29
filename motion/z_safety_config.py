@@ -15,7 +15,7 @@ import math
 @dataclass(frozen=True)
 class ZSafetyConfig:
     # Shared travel/approach/retract ceiling for real robot scripts.
-    Z_MAX_MM: float = 295.0
+    Z_MAX_MM: float = 275.0
 
     # Robot Z is the commanded J3/EE robot coordinate.
     # This is the absolute minimum robot Z allowed during pick/grasp motion.

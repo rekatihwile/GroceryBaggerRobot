@@ -95,7 +95,7 @@
     const int   J3_DESCEND_DIR        = -J3_LIFT_DIR;                       // +1 when lift dir = -1
 
     const int J3_RUN_CURRENT_MA        = 2500;
-    const int J3_SOFT_DROP_CURRENT_MA  = 1600;
+    const int J3_SOFT_DROP_CURRENT_MA  = 100;
 
     const bool J3_DROP_BEFORE_LIFT = true;
     const long J3_DROPPED_STEPS    = 0;
