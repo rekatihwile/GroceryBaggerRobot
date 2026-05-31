@@ -65,7 +65,7 @@ TRAINING_IMAGES_DIR = ROOT / "Training_Images"
 STEREO_CALIBRATION_PATH = ROOT / "stereo_calibration.npz"
 
 YOLO_WEIGHTS_CANDIDATES = [
-    ROOT / "yolo_weights" / "Validate_Only_100_Training_Best.pt",
+    ROOT / "yolo_weights" / "full_data.pt",
     ROOT / "yolo_weights" / "best.pt",
     ROOT / "weights" / "best.pt",
 ]

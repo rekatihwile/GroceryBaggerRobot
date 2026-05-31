@@ -1,0 +1,23 @@
+Selected pair index: 20
+Left image: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images\Stereo_Left_0020.jpg
+Right image: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images\Stereo_Right_0020.jpg
+YOLO weights: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\yolo_weights\full_data.pt
+RAFT checkpoint: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\RAFT-Stereo\models\raftstereo-middlebury.pth
+Stereo calibration: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\stereo_calibration.npz
+Rectify inputs: False
+
+Detections: 10
+
+#00 class=Diet Coke class_id=4 conf=0.984 points=5369 bbox=[386.0, 138.4, 458.1, 247.0] ply=instance_00_Diet_Coke_conf0.98.ply
+#01 class=Pringles class_id=8 conf=0.984 points=4525 bbox=[420.6, 69.8, 514.7, 140.0] ply=instance_01_Pringles_conf0.98.ply
+#02 class=Chex Mix class_id=3 conf=0.979 points=10559 bbox=[47.6, 282.5, 178.6, 396.7] ply=instance_02_Chex_Mix_conf0.98.ply
+#03 class=Dove Deodorant class_id=5 conf=0.978 points=5529 bbox=[357.9, 307.1, 471.2, 418.0] ply=instance_03_Dove_Deodorant_conf0.98.ply
+#04 class=Paper Towels class_id=7 conf=0.974 points=29549 bbox=[0.0, 36.8, 210.9, 256.8] ply=instance_04_Paper_Towels_conf0.97.ply
+#05 class=Burts Bees class_id=1 conf=0.969 points=2114 bbox=[256.3, 96.0, 312.3, 158.0] ply=instance_05_Burts_Bees_conf0.97.ply
+#06 class=Lays Chips class_id=6 conf=0.965 points=9823 bbox=[298.5, 49.5, 390.4, 221.7] ply=instance_06_Lays_Chips_conf0.97.ply
+#07 class=Bandaid class_id=0 conf=0.949 points=6794 bbox=[219.7, 301.2, 280.1, 442.3] ply=instance_07_Bandaid_conf0.95.ply
+#08 class=Burts Bees class_id=1 conf=0.470 points=5832 bbox=[272.3, 293.1, 368.7, 399.9] ply=instance_08_Burts_Bees_conf0.47.ply
+#09 class=Carmex Lip Balm class_id=2 conf=0.452 points=5846 bbox=[272.1, 292.8, 368.6, 400.5] ply=instance_09_Carmex_Lip_Balm_conf0.45.ply
+
+Combined pointcloud: combined_segmented_pointcloud.ply
+Combined points: 85940
