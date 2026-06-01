@@ -100,7 +100,7 @@
     const bool J3_DROP_BEFORE_LIFT = true;
     const long J3_DROPPED_STEPS    = 0;
     const unsigned long J3_KICK_DISABLE_MS = 100;
-    const unsigned long J3_DROP_MS         = 2000;
+    const unsigned long J3_DROP_MS         = 3000;
     const unsigned long J3_LIFT_TIMEOUT_MS = 15000;
     // ----------------------------------------
     // HOME POSITIONS  (step counts)
@@ -122,7 +122,7 @@
     const float HOME_SLOW_SPEED = 120.0;
     const float HOME_ACCEL      = 800.0;
 
-    const long HOME_BACKOFF_STEPS = 400;
+    const long HOME_BACKOFF_STEPS = 500;
     const unsigned long HOME_TIMEOUT_MS = 90000;
     // ----------------------------------------
     // J1/J2 COUPLING COMPENSATION
@@ -141,7 +141,7 @@
     const float J2_NORMAL_ACCEL     = 7000.0;
 
     const float J3_NORMAL_MAX_SPEED = 10000.0;
-    const float J3_NORMAL_ACCEL     = 5000.0;
+    const float J3_NORMAL_ACCEL     = 10000.0;
 
     const float J4_NORMAL_MAX_SPEED = 40000.0;
     const float J4_NORMAL_ACCEL     = 1000.0;

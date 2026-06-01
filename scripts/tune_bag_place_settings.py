@@ -19,9 +19,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from motion.z_safety_config import DEFAULT_Z_SAFETY, print_z_safety_settings, validate_z_command  # noqa: E402
+from config.motion.z_safety_config import DEFAULT_Z_SAFETY, print_z_safety_settings, validate_z_command  # noqa: E402
 
-# Bag zone comes from scripts.pick_one_place_one._load_place_surface_zone().
+# Bag scene comes from scripts.pick_one_place_one._load_place_scene().
 TRACE_Z_MM = None  # None means use scripts.pick_one_place_one.Z_MAX_MM.
 
 # Approximate object/placement knobs to test without running autonomy.
@@ -51,7 +51,7 @@ import traceback
 import numpy as np
 
 from motion.pick_validation_motion import startup_robot
-from scripts.pick_one_place_one import Z_MAX_MM, _configure_modules, _load_place_surface_zone
+from scripts.pick_one_place_one import Z_MAX_MM, _configure_modules, _load_place_scene
 
 
 def _bag_bounds(zone: dict) -> tuple[np.ndarray, np.ndarray]:
@@ -153,7 +153,7 @@ def main() -> int:
     print("BAG PLACE SETTINGS TUNER")
     print("=" * 64)
     print_z_safety_settings("[TUNE PLACE] Z safety", config=DEFAULT_Z_SAFETY)
-    zone = _load_place_surface_zone()
+    zone = _load_place_scene()
     targets = _candidate_targets(zone)
     _print_target_audit(zone, targets)
 

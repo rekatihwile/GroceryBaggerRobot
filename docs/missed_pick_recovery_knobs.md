@@ -22,8 +22,8 @@ This is a practical tuning map for `scripts/autonomous_missed_pick_recovery.py`.
 
 ## Place Location And Pattern
 
-- `PLACE_SURFACE_ZONE_NAME` selects the bag/surface zone.
-- Object 1 goes to the zone center. Object 2 goes adjacent using `ADJACENT_DIRECTION`. Later objects stack on the two columns.
+- `PLACE_SCENE_NAME` selects the bag/surface zone from `config/surface_zones.json`.
+- The bag-local AABB planner chooses the next object and target from the current visible scene plus already placed boxes.
 - `PLACE_REQUIRE_GRIPPER_FOOTPRINT_INSIDE_BAG` aborts placement if the estimated claw footprint would leave the bag rectangle.
 - The claw footprint uses `length = PLACE_GRIPPER_FOOTPRINT_LENGTH_L_MM * sin(servo_angle)` and fixed width `PLACE_GRIPPER_FOOTPRINT_WIDTH_MM`, plus margin.
 - Use `scripts/tune_bag_place_settings.py` to audit and jog these target centers at max Z without running autonomy.

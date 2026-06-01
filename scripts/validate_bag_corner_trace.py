@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from motion.z_safety_config import DEFAULT_Z_SAFETY, print_z_safety_settings, validate_z_command  # noqa: E402
+from config.motion.z_safety_config import DEFAULT_Z_SAFETY, print_z_safety_settings, validate_z_command  # noqa: E402
 
 # Use the same zone name/config paths as scripts/pick_one_place_one.py.
 BAG_ZONE_NAME = "New Bag Test"
@@ -55,7 +55,7 @@ from motion.pick_validation_motion import startup_robot
 from scripts.pick_one_place_one import (
     Z_MAX_MM,
     _configure_modules,
-    _load_place_surface_zone,
+    _load_place_scene,
 )
 
 
@@ -122,7 +122,7 @@ def main() -> int:
     print("[BAG TRACE] It will not lower into the bag.")
     print_z_safety_settings("[BAG TRACE] Z safety", config=DEFAULT_Z_SAFETY)
 
-    zone = _load_place_surface_zone()
+    zone = _load_place_scene()
     if str(zone.get("name", "")) != BAG_ZONE_NAME:
         print(f"[BAG TRACE] WARN: loaded zone name is {zone.get('name')!r}, requested label is {BAG_ZONE_NAME!r}.")
 

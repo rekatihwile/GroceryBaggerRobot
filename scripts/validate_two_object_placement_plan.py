@@ -121,7 +121,7 @@ from hardware.cameras.stereo_apriltag_viewer import SimpleStereoCamera, build_de
 from planning.aabb_utils import make_aabb_from_center_size, aabb_from_object_candidate, pad_aabb
 from planning.adjacent_placement import AdjacentPlacementPlan, compute_adjacent_placement
 from scripts.aabb_visualization_helpers import corners_from_box, draw_box, draw_robot_axes, set_axes_equal
-from scripts.pick_one_place_one import _load_place_surface_zone
+from scripts.pick_one_place_one import _load_place_scene
 from scripts.pick_validation_display import _hr, make_display, print_validation
 from test_calibration_bundle_live_stereo_z_pickplace import (
     load_bundle,
@@ -383,7 +383,7 @@ def main() -> int:
     stereo = SimpleStereoCamera(STEREO_INDEX)
     robot_stub = NoMotionFKRobot()
 
-    zone = _load_place_surface_zone()
+    zone = _load_place_scene()
     state: SurveyState | None = None
     object1_dbg: CandidateDebug | None = None
     object2_dbg: CandidateDebug | None = None

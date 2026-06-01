@@ -1,0 +1,41 @@
+{
+  "run_timestamp": "20260531_173417",
+  "script": "autonomous_missed_pick_recovery.py",
+  "place_planning_sequence": "bag_local_aabb_joint",
+  "objects": [
+    {
+      "object_i": 1,
+      "class_name": "Bandaid",
+      "pick_xy_mm": [
+        94.82911041208648,
+        440.574793461785
+      ],
+      "pick_z_mm": -15.041316028051217,
+      "pick_grasp_z_mm": 114.95868397194879,
+      "pick_phi_deg": 172.9621412335315,
+      "place_xy_mm": null,
+      "place_phi_deg": null,
+      "destination_surface_z_mm": null,
+      "place_result": "pending",
+      "raw_box_center_xyz_mm": null,
+      "raw_box_size_xyz_mm": null,
+      "padded_box_center_xyz_mm": null,
+      "padded_box_size_xyz_mm": null,
+      "detection_class": "Bandaid",
+      "detection_confidence": 0.94482421875,
+      "detection_bbox_xyxy": [
+        134.875,
+        246.375,
+        321.75,
+        400.5
+      ],
+      "stereo_left": "Stereo_Left_0001.png",
+      "stereo_right": "Stereo_Right_0001.png",
+      "overhead": "Overhead_0001.png",
+      "disparity": "disparity_0001.npz",
+      "points_cam": "points_cam_0001.npz",
+      "left_overlay": "left_overlay_0001.png"
+    }
+  ],
+  "placed_boxes": []
+}

@@ -95,7 +95,7 @@ def _finite_or_none(value: Any) -> float | None:
 
 
 def _candidate_size_mm(candidate) -> tuple[np.ndarray, str]:
-    # Preferred: overhead-projected AABB footprint + robust/pointcloud height.
+    # Priority 1: overhead-projected AABB footprint (most reliable when available).
     width_mm = None
     depth_mm = None
     top_w = _finite_or_none(getattr(candidate, "topdown_width_cm", None))
@@ -105,21 +105,46 @@ def _candidate_size_mm(candidate) -> tuple[np.ndarray, str]:
         depth_mm = top_d * 10.0
         xy_source = "topdown_width_depth_cm"
     else:
-        footprint = getattr(candidate, "pointcloud_footprint_cm", None)
-        if footprint is not None:
+        # Priority 2: PCA-oriented minimum bounding rectangle — gives the actual
+        # physical dimensions of the object regardless of its orientation relative
+        # to the robot X/Y axes, so the AABB is as tight as possible.
+        oriented = getattr(candidate, "topdown_oriented_rect_cm", None)
+        if oriented is not None:
             try:
-                fw = _finite_or_none(footprint[0])
-                fd = _finite_or_none(footprint[1])
+                ow = _finite_or_none(oriented[0])
+                od = _finite_or_none(oriented[1])
             except Exception:
-                fw, fd = None, None
-            if fw is not None and fw > 0.0 and fd is not None and fd > 0.0:
-                width_mm = fw * 10.0
-                depth_mm = fd * 10.0
-                xy_source = "pointcloud_footprint_cm"
+                ow, od = None, None
+            if ow is not None and ow > 0.0 and od is not None and od > 0.0:
+                # PCA tends to slightly overestimate because the point cloud
+                # extends to the outer boundary of the measurement noise.
+                # Trim ~4 % so items that are within sensor noise of the bag
+                # boundary still get floor placements instead of being forced
+                # to stack.  The trim is small enough that collision avoidance
+                # is not meaningfully degraded.
+                _PCA_TRIM = 0.96
+                width_mm = ow * 10.0 * _PCA_TRIM
+                depth_mm = od * 10.0 * _PCA_TRIM
+                xy_source = "pca_oriented_rect_cm"
+
+        # Priority 3: axis-aligned pointcloud span (fallback — inflated for
+        # diagonal objects but always available).
+        if width_mm is None:
+            footprint = getattr(candidate, "pointcloud_footprint_cm", None)
+            if footprint is not None:
+                try:
+                    fw = _finite_or_none(footprint[0])
+                    fd = _finite_or_none(footprint[1])
+                except Exception:
+                    fw, fd = None, None
+                if fw is not None and fw > 0.0 and fd is not None and fd > 0.0:
+                    width_mm = fw * 10.0
+                    depth_mm = fd * 10.0
+                    xy_source = "pointcloud_footprint_cm"
+                else:
+                    xy_source = "none"
             else:
                 xy_source = "none"
-        else:
-            xy_source = "none"
 
     if width_mm is None or depth_mm is None:
         width_mm = 80.0

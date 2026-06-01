@@ -15,6 +15,8 @@ Usage:
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from config.motion.z_safety_config import DEFAULT_Z_SAFETY
+
 
 @dataclass(frozen=True)
 class PickConfig:
@@ -39,9 +41,9 @@ class PickConfig:
     PHI_FALLBACK_TO_CURRENT_EE_PHI: bool = False
 
     # ── Z safety bounds (must mirror config/motion/z_safety_config.py) ───
-    Z_MAX_MM: float = 275.0
-    MIN_PICK_GRASP_Z_MM: float = 140.0
-    GRIPPER_OFFSET_MM: float = 165.0
+    Z_MAX_MM: float = float(DEFAULT_Z_SAFETY.Z_MAX_MM)
+    MIN_PICK_GRASP_Z_MM: float = float(DEFAULT_Z_SAFETY.MIN_PICK_GRASP_Z_MM)
+    GRIPPER_OFFSET_MM: float = float(DEFAULT_Z_SAFETY.GRIPPER_OFFSET_MM)
 
     # ── Robust Z estimation from point cloud ──────────────────────────────
     USE_ROBUST_OBJECT_Z: bool = True
@@ -50,9 +52,9 @@ class PickConfig:
     TOP_SPREAD_LOW_PERCENTILE: float = 90.0
     TOP_SPREAD_HIGH_PERCENTILE: float = 99.0
     Z_UNCERTAINTY_CLEARANCE_GAIN: float = 1.0
-    Z_UNCERTAINTY_CLEARANCE_MIN_MM: float = 5.0
+    Z_UNCERTAINTY_CLEARANCE_MIN_MM: float = 2.5
     Z_UNCERTAINTY_CLEARANCE_MAX_MM: float = 20.0
-    Z_UNCERTAINTY_WARN_MM: float = 10.0
+    Z_UNCERTAINTY_WARN_MM: float = 20.0
     PICK_EXTRA_CLEARANCE_MM: float = 0.0
     PICK_Z_UNCERTAINTY_GAIN: float = 0.25
     PICK_Z_UNCERTAINTY_CLEARANCE_MAX_MM: float = 20.0
@@ -68,7 +70,7 @@ class PickConfig:
 
     # ── Overhead XY ───────────────────────────────────────────────────────
     # Refuse picks where the overhead camera could not confirm an XY position.
-    REQUIRE_OVERHEAD_XY_FOR_PICK: bool = False
+    REQUIRE_OVERHEAD_XY_FOR_PICK: bool = True
     REFUSE_PICK_IF_TOO_FEW_POINTS: bool = True
 
     # ── Local height-aware grasp XY ───────────────────────────────────────
@@ -79,7 +81,7 @@ class PickConfig:
     LOCAL_GRASP_TOP_REGION_PERCENTILE: float = 90.0
     LOCAL_GRASP_HEIGHT_DELTA_THRESHOLD_MM: float = 5.0
     LOCAL_GRASP_BLEND_WEIGHT: float = 0.35
-    LOCAL_GRASP_MAX_SHIFT_MM: float = 100.0
+    LOCAL_GRASP_MAX_SHIFT_MM: float = 30.0
 
     # ── Display (for pick_one_place_one interactive viewer) ───────────────
     COMBINED_WIDTH_PX: int = 1280

@@ -12,7 +12,7 @@ Covers:
 Usage:
     from config.place.place_config import DEFAULT_PLACE, PlaceConfig
     _PLACE = DEFAULT_PLACE
-    _PLACE = PlaceConfig(PLACE_SURFACE_ZONE_NAME="Left Bag", PAD_Z_MM=30.0)
+    _PLACE = PlaceConfig(PLACE_SCENE_NAME="Left Bag", PAD_Z_MM=30.0)
 """
 
 from dataclasses import dataclass, replace
@@ -22,11 +22,8 @@ from pathlib import Path
 @dataclass(frozen=True)
 class PlaceConfig:
     # ── Zone selection ────────────────────────────────────────────────────
-    PLACE_SURFACE_ZONE_NAME: str = "New Bag Test"
-    SURFACE_ZONE_CONFIG_PATH: Path = Path("config/surface_zones.json")
-    # Legacy place_zones.json fallback (used if surface_zones.json lookup fails).
-    PLACE_ZONE_NAME: str = "New Bag Test"
-    PLACE_ZONE_CONFIG_PATH: Path = Path("config/place_zones.json")
+    PLACE_SCENE_NAME: str = "New Bag Test"
+    PLACE_SCENE_CONFIG_PATH: Path = Path("config/surface_zones.json")
 
     # ── Release Z policy ──────────────────────────────────────────────────
     # "shared"              — use shared place_z_policy only
@@ -34,7 +31,7 @@ class PlaceConfig:
     # "negative_bin_simple" — object height above bin floor
     PLACE_Z_POLICY_MODE: str = "negative_bin_hang"
     # Bin floor when using negative_bin_* modes (bag bottom in robot Z coords).
-    PLACE_NEGATIVE_BIN_PLATFORM_Z_MM: float = -200.0
+    PLACE_NEGATIVE_BIN_PLATFORM_Z_MM: float = -175.0
     PLACE_NEGATIVE_BIN_MIN_RELEASE_Z_MM: float = 0.0
     PLACE_NEGATIVE_BIN_HANG_WEIGHT: float = 0.70
     PLACE_NEGATIVE_BIN_SIMPLE_WEIGHT: float = 0.30
@@ -84,9 +81,16 @@ class PlaceConfig:
     PAD_Y_MM: float = 0.0
     PAD_Z_MM: float = 20.0
 
+    # Plug-in planning sequence for wet runs and dry validation.
+    # "bag_local_aabb_joint" uses the deterministic bag-local planner to jointly
+    # choose the next object and bag target.
+    # "volume_topdown_safe" is the conservative fallback: volume order, padded
+    # top-down AABB footprints, no future item/weight/fragility scoring.
+    PLACE_PLANNING_SEQUENCE_NAME: str = "bag_local_aabb_joint"
+    # Nominal usable bag height for bag-local planning experiments.
+    PLACE_BAG_LOCAL_HEIGHT_MM: float = 250.0
+
     # ── Packing strategy ──────────────────────────────────────────────────
-    # Direction for the 2nd object relative to the 1st: left/right/up/down.
-    ADJACENT_DIRECTION: str = "left"
     # Efficient packing scores slot fit first, then picks by volume.
     EFFICIENT_PACKING_ENABLED: bool = True
     EFFICIENT_PACKING_REQUIRE_SLOT_FIT: bool = True

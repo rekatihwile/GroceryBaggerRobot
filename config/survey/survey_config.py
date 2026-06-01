@@ -40,7 +40,7 @@ class SurveyConfig:
     USE_HALF: bool = True
 
     # ── RAFT-Stereo disparity ────────────────────────────────────────────
-    RAFT_VALID_ITERS: int = 16
+    RAFT_VALID_ITERS: int =16
     RAFT_DOWNSCALE: float = 1.0
     RAFT_MIXED_PRECISION: bool = True
     MIN_DISPARITY_PX: float = 1.0
@@ -51,8 +51,8 @@ class SurveyConfig:
     # ── Burst tracking ───────────────────────────────────────────────────
     # How many stereo frames to grab per survey; a candidate must appear in
     # at least MIN_BURST_HITS frames to survive the cluster filter.
-    BURST_COUNT: int = 10
-    MIN_BURST_HITS: int = 3
+    BURST_COUNT: int = 5
+    MIN_BURST_HITS: int = 5
     BURST_FRAME_DELAY_S: float = 0.05
     BURST_CLUSTER_MAX_CENTROID_PX: float = 75.0
     BURST_REQUIRE_SAME_CLASS: bool = True
@@ -60,7 +60,7 @@ class SurveyConfig:
     # ── Overhead camera ──────────────────────────────────────────────────
     # Discard this many queued overhead frames before the survey reads one;
     # prevents stale frames from appearing during RAFT/pointcloud work.
-    OVERHEAD_FRESH_READ_DISCARD_FRAMES: int = 6
+    OVERHEAD_FRESH_READ_DISCARD_FRAMES: int = 2
     OVERHEAD_FRESH_READ_DELAY_S: float = 0.02
     OVERHEAD_MATCH_MAX_DIST_MM: float = 140.0
     OVERHEAD_MATCH_PREFER_SAME_CLASS: bool = True

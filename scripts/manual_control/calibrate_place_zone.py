@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-Manual placement-zone calibration GUI.
+Manual placement-scene calibration GUI.
 
 This extends scripts/manual_control/workspace_click_jog.py with a small zone
 capture/edit/save panel. It does not close the claw and does not run any
@@ -12,7 +12,7 @@ Controls added here:
   c       capture current FK as zone center/floor_z/phi
   z       edit width/depth/floor_z numerically
   b       toggle drawing current zone bounds
-  Ctrl+S  save zone to config/place_zones.json
+  Ctrl+S  save scene to config/surface_zones.json
 """
 
 # ============================================================
@@ -21,8 +21,8 @@ Controls added here:
 
 from pathlib import Path
 
-PLACE_ZONE_CONFIG_PATH = Path("config/place_zones.json")
-DEFAULT_ZONE_NAME = "default_test_zone"
+PLACE_SCENE_CONFIG_PATH = Path("config/surface_zones.json")
+DEFAULT_SCENE_NAME = "default_test_zone"
 DEFAULT_ZONE_WIDTH_MM = 120.0
 DEFAULT_ZONE_DEPTH_MM = 120.0
 
@@ -40,15 +40,15 @@ PROJECT_ROOT = next(
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.place_zone_io import get_place_zone, upsert_place_zone
+from config.surface_zone_io import get_surface_zone, upsert_surface_zone
 from config.robot_config import print_startup_config
 from config.camera_config import OVERHEAD_INDEX, STEREO_INDEX
 from scripts.manual_control.workspace_click_jog import WorkspaceGUI
 
 
-class PlaceZoneCalibrationGUI(WorkspaceGUI):
+class PlaceSceneCalibrationGUI(WorkspaceGUI):
     def __init__(self, root: tk.Tk):
-        self.zone_name = DEFAULT_ZONE_NAME
+        self.zone_name = DEFAULT_SCENE_NAME
         self.zone_center_xy_mm = [450.0, 250.0]
         self.zone_floor_z_mm = 85.0
         self.zone_phi_deg = 0.0
@@ -57,7 +57,7 @@ class PlaceZoneCalibrationGUI(WorkspaceGUI):
         self.zone_notes = "Saved from calibrate_place_zone.py."
         self.show_zone_bounds = True
         self._zone_labels: dict[str, tk.Label] = {}
-        self._load_zone(DEFAULT_ZONE_NAME, quiet=True)
+        self._load_zone(DEFAULT_SCENE_NAME, quiet=True)
         super().__init__(root)
         self._update_zone_labels()
 
@@ -124,15 +124,15 @@ class PlaceZoneCalibrationGUI(WorkspaceGUI):
 
     def _load_zone(self, name: str, *, quiet: bool = False) -> None:
         try:
-            zone = get_place_zone(name, PLACE_ZONE_CONFIG_PATH)
+            zone = get_surface_zone(name, PLACE_SCENE_CONFIG_PATH)
         except Exception as exc:
             if not quiet:
                 messagebox.showwarning("Place Zone", f"Could not load zone {name!r}:\n{exc}")
             return
         self.zone_name = str(zone["name"])
         self.zone_center_xy_mm = [float(zone["center_xy_mm"][0]), float(zone["center_xy_mm"][1])]
-        self.zone_floor_z_mm = float(zone["floor_z_mm"])
-        self.zone_phi_deg = float(zone["phi_deg"])
+        self.zone_floor_z_mm = float(zone["surface_z_mm"])
+        self.zone_phi_deg = float(zone["default_phi_deg"])
         self.zone_width_mm = float(zone["width_mm"])
         self.zone_depth_mm = float(zone["depth_mm"])
         self.zone_notes = str(zone.get("notes", ""))
@@ -227,22 +227,22 @@ class PlaceZoneCalibrationGUI(WorkspaceGUI):
 
     def _save_zone(self):
         try:
-            zone = upsert_place_zone(
-                self.zone_name,
-                self.zone_center_xy_mm,
-                self.zone_floor_z_mm,
-                self.zone_phi_deg,
-                self.zone_width_mm,
-                self.zone_depth_mm,
+            zone = upsert_surface_zone(
+                name=self.zone_name,
+                center_xy_mm=self.zone_center_xy_mm,
+                surface_z_mm=self.zone_floor_z_mm,
+                default_phi_deg=self.zone_phi_deg,
+                width_mm=self.zone_width_mm,
+                depth_mm=self.zone_depth_mm,
                 notes=self.zone_notes,
-                path=PLACE_ZONE_CONFIG_PATH,
+                path=PLACE_SCENE_CONFIG_PATH,
             )
         except Exception as exc:
             messagebox.showerror("Save Place Zone", str(exc))
             return
         print("[PLACE ZONE] saved:")
         print(json.dumps(zone, indent=2))
-        self._set_status(f"Saved zone {zone['name']}", "#4ae04a")
+        self._set_status(f"Saved scene {zone['name']}", "#4ae04a")
         self._update_zone_labels()
         self._refresh()
 
@@ -266,7 +266,7 @@ def main():
     print_startup_config("calibrate_place_zone.py", OVERHEAD_INDEX, STEREO_INDEX)
     root = tk.Tk()
     root.resizable(True, True)
-    app = PlaceZoneCalibrationGUI(root)
+    app = PlaceSceneCalibrationGUI(root)
 
     def on_close():
         if app.robot:

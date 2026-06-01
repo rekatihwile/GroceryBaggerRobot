@@ -18,7 +18,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from motion.z_safety_config import (
+from config.pick.pick_config import DEFAULT_PICK
+from config.pick.servo_config import DEFAULT_SERVO
+from config.place import DEFAULT_PLACE, load_place_scene as _load_shared_place_scene
+from config.survey.survey_config import DEFAULT_SURVEY
+from config.motion.z_safety_config import (
     DEFAULT_Z_SAFETY,
     GRIPPER_OFFSET_MM as SHARED_GRIPPER_OFFSET_MM,
     PLACE_RELEASE_GAP_MM as SHARED_PLACE_RELEASE_GAP_MM,
@@ -27,44 +31,41 @@ from motion.z_safety_config import (
     validate_z_command,
 )
 
-BUNDLE_PATH = Path("robot_calibration_bundle.npz")
-STEREO_CALIBRATION_PATH = Path("stereo_calibration.npz")
+BUNDLE_PATH = Path(DEFAULT_SURVEY.BUNDLE_PATH)
+STEREO_CALIBRATION_PATH = Path(DEFAULT_SURVEY.STEREO_CALIBRATION_PATH)
 
-YOLO_WEIGHTS_PATH = Path("full_data.pt")
-YOLO_FALLBACK_WEIGHTS_PATH = Path("yolo_weights/validate_V2.pt")
+YOLO_WEIGHTS_PATH = Path(DEFAULT_SURVEY.YOLO_WEIGHTS_PATH)
+YOLO_FALLBACK_WEIGHTS_PATH = Path(DEFAULT_SURVEY.YOLO_FALLBACK_WEIGHTS_PATH)
 
-RAFT_ROOT = Path("RAFT-Stereo")
-RAFT_CHECKPOINT_PATH = Path("RAFT-Stereo/models/raftstereo-middlebury.pth")
+RAFT_ROOT = Path(DEFAULT_SURVEY.RAFT_ROOT)
+RAFT_CHECKPOINT_PATH = Path(DEFAULT_SURVEY.RAFT_CHECKPOINT_PATH)
 
-SURFACE_ZONE_CONFIG_PATH = Path("config/surface_zones.json")
-PLACE_SURFACE_ZONE_NAME = "New Bag Test"
+PLACE_SCENE_CONFIG_PATH = Path(DEFAULT_PLACE.PLACE_SCENE_CONFIG_PATH)
+PLACE_SCENE_NAME = str(DEFAULT_PLACE.PLACE_SCENE_NAME)
 
-PLACE_ZONE_CONFIG_PATH = Path("config/place_zones.json")
-PLACE_ZONE_NAME = "New Bag Test"
+YOLO_IMGSZ: int = int(DEFAULT_SURVEY.YOLO_IMGSZ)
+YOLO_CONF: float = float(DEFAULT_SURVEY.YOLO_CONF)
+YOLO_IOU: float = float(DEFAULT_SURVEY.YOLO_IOU)
+YOLO_RETINA_MASKS: bool = bool(DEFAULT_SURVEY.YOLO_RETINA_MASKS)
+TARGET_CLASS_NAMES: list[str] = list(DEFAULT_SURVEY.TARGET_CLASS_NAMES)
 
-YOLO_IMGSZ: int = 640
-YOLO_CONF: float = 0.35
-YOLO_IOU: float = 0.50
-YOLO_RETINA_MASKS: bool = True
-TARGET_CLASS_NAMES: list[str] = []
+USE_CUDA: bool = bool(DEFAULT_SURVEY.USE_CUDA)
+USE_HALF: bool = bool(DEFAULT_SURVEY.USE_HALF)
+RAFT_VALID_ITERS: int = int(DEFAULT_SURVEY.RAFT_VALID_ITERS)
+RAFT_DOWNSCALE: float = float(DEFAULT_SURVEY.RAFT_DOWNSCALE)
+RAFT_MIXED_PRECISION: bool = bool(DEFAULT_SURVEY.RAFT_MIXED_PRECISION)
 
-USE_CUDA: bool = True
-USE_HALF: bool = True
-RAFT_VALID_ITERS: int = 16
-RAFT_DOWNSCALE: float = 1.0
-RAFT_MIXED_PRECISION: bool = True
+MIN_MASK_AREA_PX: int = int(DEFAULT_SURVEY.MIN_MASK_AREA_PX)
+MIN_DISPARITY_PX: float = float(DEFAULT_SURVEY.MIN_DISPARITY_PX)
+MIN_VALID_OBJECT_POINTS: int = int(DEFAULT_SURVEY.MIN_VALID_OBJECT_POINTS)
 
-MIN_MASK_AREA_PX: int = 500
-MIN_DISPARITY_PX: float = 1.0
-MIN_VALID_OBJECT_POINTS: int = 300
+BURST_COUNT: int = int(DEFAULT_SURVEY.BURST_COUNT)
+MIN_BURST_HITS: int = int(DEFAULT_SURVEY.MIN_BURST_HITS)
+BURST_FRAME_DELAY_S: float = float(DEFAULT_SURVEY.BURST_FRAME_DELAY_S)
+BURST_CLUSTER_MAX_CENTROID_PX: float = float(DEFAULT_SURVEY.BURST_CLUSTER_MAX_CENTROID_PX)
+BURST_REQUIRE_SAME_CLASS: bool = bool(DEFAULT_SURVEY.BURST_REQUIRE_SAME_CLASS)
 
-BURST_COUNT: int = 10
-MIN_BURST_HITS: int = 3
-BURST_FRAME_DELAY_S: float = 0.05
-BURST_CLUSTER_MAX_CENTROID_PX: float = 75.0
-BURST_REQUIRE_SAME_CLASS: bool = True
-
-PICK_PHI_MODE: str = "centroid_shortest_ray_parallel"
+PICK_PHI_MODE: str = str(DEFAULT_PICK.PICK_PHI_MODE)
 VALID_PICK_PHI_MODES = {
     "centroid_longest_ray_perp",
     "centroid_shortest_ray_parallel",
@@ -76,107 +77,107 @@ VALID_PICK_PHI_MODES = {
     "current_fk",
 }
 
-Z_MAX_MM: float = SHARED_Z_MAX_MM
+Z_MAX_MM: float = float(DEFAULT_PICK.Z_MAX_MM if DEFAULT_PICK.Z_MAX_MM is not None else SHARED_Z_MAX_MM)
 MIN_PICK_GRASP_Z_MM: float = DEFAULT_Z_SAFETY.MIN_PICK_GRASP_Z_MM
 PLACE_APPROACH_Z_MM: float = Z_MAX_MM
-GRIPPER_OFFSET_MM: float = SHARED_GRIPPER_OFFSET_MM
+GRIPPER_OFFSET_MM: float = float(DEFAULT_PICK.GRIPPER_OFFSET_MM if DEFAULT_PICK.GRIPPER_OFFSET_MM is not None else SHARED_GRIPPER_OFFSET_MM)
 HOVER_HEIGHT_MM: float = Z_MAX_MM
 GRASP_OFFSET_MM: float = GRIPPER_OFFSET_MM
-USE_ROBUST_OBJECT_Z = True
-ROBUST_TOP_PERCENTILE = 95.0
-ROBUST_BOTTOM_PERCENTILE = 5.0
-TOP_SPREAD_LOW_PERCENTILE = 90.0
-TOP_SPREAD_HIGH_PERCENTILE = 99.0
-Z_UNCERTAINTY_CLEARANCE_GAIN = 1.0
-Z_UNCERTAINTY_CLEARANCE_MIN_MM = 5.0
-Z_UNCERTAINTY_CLEARANCE_MAX_MM = 20.0
-Z_UNCERTAINTY_WARN_MM = 10.0
-PICK_EXTRA_CLEARANCE_MM = 0.0
-PLACE_RELEASE_GAP_MM = SHARED_PLACE_RELEASE_GAP_MM
-PLACE_Z_UNCERTAINTY_GAIN = 0.30
-PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 10.0
-PLACE_RELEASE_ANGLE_MODE = "empirical_plus_offset"
-PLACE_RELEASE_EMPIRICAL_OFFSET_DEG = 5.0
-PLACE_RELEASE_INITIAL_PADDING_DEG = 2.5
-PICK_Z_UNCERTAINTY_GAIN = .25
-PICK_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 20.0
-MIN_OBJECT_HEIGHT_MM = 2.0
-MAX_OBJECT_HEIGHT_MM = 180.0
+USE_ROBUST_OBJECT_Z = bool(DEFAULT_PICK.USE_ROBUST_OBJECT_Z)
+ROBUST_TOP_PERCENTILE = float(DEFAULT_PICK.ROBUST_TOP_PERCENTILE)
+ROBUST_BOTTOM_PERCENTILE = float(DEFAULT_PICK.ROBUST_BOTTOM_PERCENTILE)
+TOP_SPREAD_LOW_PERCENTILE = float(DEFAULT_PICK.TOP_SPREAD_LOW_PERCENTILE)
+TOP_SPREAD_HIGH_PERCENTILE = float(DEFAULT_PICK.TOP_SPREAD_HIGH_PERCENTILE)
+Z_UNCERTAINTY_CLEARANCE_GAIN = float(DEFAULT_PICK.Z_UNCERTAINTY_CLEARANCE_GAIN)
+Z_UNCERTAINTY_CLEARANCE_MIN_MM = float(DEFAULT_PICK.Z_UNCERTAINTY_CLEARANCE_MIN_MM)
+Z_UNCERTAINTY_CLEARANCE_MAX_MM = float(DEFAULT_PICK.Z_UNCERTAINTY_CLEARANCE_MAX_MM)
+Z_UNCERTAINTY_WARN_MM = float(DEFAULT_PICK.Z_UNCERTAINTY_WARN_MM)
+PICK_EXTRA_CLEARANCE_MM = float(DEFAULT_PICK.PICK_EXTRA_CLEARANCE_MM)
+PLACE_RELEASE_GAP_MM = float(DEFAULT_PLACE.PLACE_RELEASE_GAP_MM if DEFAULT_PLACE.PLACE_RELEASE_GAP_MM is not None else SHARED_PLACE_RELEASE_GAP_MM)
+PLACE_Z_UNCERTAINTY_GAIN = float(DEFAULT_PLACE.PLACE_Z_UNCERTAINTY_GAIN)
+PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = float(DEFAULT_PLACE.PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM)
+PLACE_RELEASE_ANGLE_MODE = str(DEFAULT_PLACE.PLACE_RELEASE_ANGLE_MODE)
+PLACE_RELEASE_EMPIRICAL_OFFSET_DEG = float(DEFAULT_PLACE.PLACE_RELEASE_EMPIRICAL_OFFSET_DEG)
+PLACE_RELEASE_INITIAL_PADDING_DEG = float(DEFAULT_PLACE.PLACE_RELEASE_INITIAL_PADDING_DEG)
+PICK_Z_UNCERTAINTY_GAIN = float(DEFAULT_PICK.PICK_Z_UNCERTAINTY_GAIN)
+PICK_Z_UNCERTAINTY_CLEARANCE_MAX_MM = float(DEFAULT_PICK.PICK_Z_UNCERTAINTY_CLEARANCE_MAX_MM)
+MIN_OBJECT_HEIGHT_MM = float(DEFAULT_PICK.MIN_OBJECT_HEIGHT_MM)
+MAX_OBJECT_HEIGHT_MM = float(DEFAULT_PICK.MAX_OBJECT_HEIGHT_MM)
 
-OVERHEAD_MATCH_MAX_DIST_MM: float = 140.0
-OVERHEAD_MATCH_PREFER_SAME_CLASS: bool = True
-OVERHEAD_XY_BLEND_WEIGHT: float = 0.45
-OVERHEAD_USE_SEMIMINOR_AXIS_FOR_PHI: bool = True
+OVERHEAD_MATCH_MAX_DIST_MM: float = float(DEFAULT_SURVEY.OVERHEAD_MATCH_MAX_DIST_MM)
+OVERHEAD_MATCH_PREFER_SAME_CLASS: bool = bool(DEFAULT_SURVEY.OVERHEAD_MATCH_PREFER_SAME_CLASS)
+OVERHEAD_XY_BLEND_WEIGHT: float = float(DEFAULT_SURVEY.OVERHEAD_XY_BLEND_WEIGHT)
+OVERHEAD_USE_SEMIMINOR_AXIS_FOR_PHI: bool = bool(DEFAULT_PICK.OVERHEAD_USE_SEMIMINOR_AXIS_FOR_PHI)
 
-USE_CONFIDENCE_PHI_BLEND: bool = False
-PHI_DISAGREEMENT_WARN_DEG: float = 25.0
-PHI_MIN_CONFIDENCE: float = 0.20
-PHI_ASPECT_DECAY: float = 0.8
-PHI_STEREO_HEIGHT_DECAY_CM: float = 8.0
-PHI_FALLBACK_TO_CURRENT_EE_PHI: bool = False
+USE_CONFIDENCE_PHI_BLEND: bool = bool(DEFAULT_PICK.USE_CONFIDENCE_PHI_BLEND)
+PHI_DISAGREEMENT_WARN_DEG: float = float(DEFAULT_PICK.PHI_DISAGREEMENT_WARN_DEG)
+PHI_MIN_CONFIDENCE: float = float(DEFAULT_PICK.PHI_MIN_CONFIDENCE)
+PHI_ASPECT_DECAY: float = float(DEFAULT_PICK.PHI_ASPECT_DECAY)
+PHI_STEREO_HEIGHT_DECAY_CM: float = float(DEFAULT_PICK.PHI_STEREO_HEIGHT_DECAY_CM)
+PHI_FALLBACK_TO_CURRENT_EE_PHI: bool = bool(DEFAULT_PICK.PHI_FALLBACK_TO_CURRENT_EE_PHI)
 
-COARSE_MOVE_TIME_S: float = 1.10
-XY_MOVE_TIME_S: float = 1.50
-PICK_Z_MOVE_TIME_S: float = 0.60
-PLACE_Z_MOVE_TIME_S: float = 0.60
+COARSE_MOVE_TIME_S: float = float(DEFAULT_PLACE.COARSE_MOVE_TIME_S)
+XY_MOVE_TIME_S: float = float(DEFAULT_PLACE.XY_MOVE_TIME_S)
+PICK_Z_MOVE_TIME_S: float = float(DEFAULT_PLACE.PICK_Z_MOVE_TIME_S)
+PLACE_Z_MOVE_TIME_S: float = float(DEFAULT_PLACE.PLACE_Z_MOVE_TIME_S)
 
 CONNECT_ROBOT: bool = True
 ENABLE_MOTORS_ON_START: bool = True
 INIT_DRIVERS_ON_START: bool = True
 
-COMBINED_WIDTH_PX: int = 1280
-OVERHEAD_DRAW_H_PX: int = 560
-STEREO_DRAW_H_PX: int = 390
-STATUS_H_PX: int = 140
+COMBINED_WIDTH_PX: int = int(DEFAULT_PICK.COMBINED_WIDTH_PX)
+OVERHEAD_DRAW_H_PX: int = int(DEFAULT_PICK.OVERHEAD_DRAW_H_PX)
+STEREO_DRAW_H_PX: int = int(DEFAULT_PICK.STEREO_DRAW_H_PX)
+STATUS_H_PX: int = int(DEFAULT_PICK.STATUS_H_PX)
 WINDOW: str = "Pick One Place One Repeatability"
 
-CLAW_OPEN_DEG: int = 60
-CLAW_CLOSED_DEG: int = 0
-ENABLE_DYNAMIC_PICK = True
-USE_DYNAMIC_PICK_HEIGHT = False
-USE_DYNAMIC_PICK_GRIP_ANGLE = True
-DYNAMIC_PICK_FALLBACK_TO_FIXED = False
-DYNAMIC_LOWER_CLEARANCE_MM = 20.0
-DYNAMIC_SERVO_MARGIN_DEG = 10.0
-GRIPPER_GEOMETRY_L_MM = 70.0
-GRIPPER_SERVO_MIN_DEG = 0.0
-GRIPPER_SERVO_MAX_DEG = 70.0
-DYNAMIC_PICK_DEFAULT_SERVO_DEG = 55.0
-DYNAMIC_LOWER_DERIV_THRESH_MA = 30.0
-DYNAMIC_GRIP_DERIV_THRESH_MA = 500.0
-DYNAMIC_CONTACT_LOOKBACK_COUNT = 3
-DYNAMIC_CONTACT_NONZERO_EPS_MA = 1.0
-DYNAMIC_CONTACT_SUM_GRIP_MA = 1500.0
-DYNAMIC_CONTACT_SUM_LOWER_MA = 50.0
-DEFAULT_OBJECT_RIGIDITY = "squishable"
-SQUISHABLE_POST_CONTACT_EXTRA_CLOSE_DEG = 5.0
-DYNAMIC_PICK_TRACE_DEBUG = False
-DYNAMIC_PICK_TRACE_QUERY_POS = False
+CLAW_OPEN_DEG: int = int(DEFAULT_SERVO.CLAW_OPEN_DEG)
+CLAW_CLOSED_DEG: int = int(DEFAULT_SERVO.CLAW_CLOSED_DEG)
+ENABLE_DYNAMIC_PICK = bool(DEFAULT_SERVO.ENABLE_DYNAMIC_PICK)
+USE_DYNAMIC_PICK_HEIGHT = bool(DEFAULT_SERVO.USE_DYNAMIC_PICK_HEIGHT)
+USE_DYNAMIC_PICK_GRIP_ANGLE = bool(DEFAULT_SERVO.USE_DYNAMIC_PICK_GRIP_ANGLE)
+DYNAMIC_PICK_FALLBACK_TO_FIXED = bool(DEFAULT_SERVO.DYNAMIC_PICK_FALLBACK_TO_FIXED)
+DYNAMIC_LOWER_CLEARANCE_MM = float(DEFAULT_SERVO.DYNAMIC_LOWER_CLEARANCE_MM)
+DYNAMIC_SERVO_MARGIN_DEG = float(DEFAULT_SERVO.DYNAMIC_SERVO_MARGIN_DEG)
+GRIPPER_GEOMETRY_L_MM = float(DEFAULT_SERVO.GRIPPER_GEOMETRY_L_MM)
+GRIPPER_SERVO_MIN_DEG = float(DEFAULT_SERVO.GRIPPER_SERVO_MIN_DEG)
+GRIPPER_SERVO_MAX_DEG = float(DEFAULT_SERVO.GRIPPER_SERVO_MAX_DEG)
+DYNAMIC_PICK_DEFAULT_SERVO_DEG = float(DEFAULT_SERVO.DYNAMIC_PICK_DEFAULT_SERVO_DEG)
+DYNAMIC_LOWER_DERIV_THRESH_MA = float(DEFAULT_SERVO.DYNAMIC_LOWER_DERIV_THRESH_MA)
+DYNAMIC_GRIP_DERIV_THRESH_MA = float(DEFAULT_SERVO.DYNAMIC_GRIP_DERIV_THRESH_MA)
+DYNAMIC_CONTACT_LOOKBACK_COUNT = int(DEFAULT_SERVO.DYNAMIC_CONTACT_LOOKBACK_COUNT)
+DYNAMIC_CONTACT_NONZERO_EPS_MA = float(DEFAULT_SERVO.DYNAMIC_CONTACT_NONZERO_EPS_MA)
+DYNAMIC_CONTACT_SUM_GRIP_MA = float(DEFAULT_SERVO.DYNAMIC_CONTACT_SUM_GRIP_MA)
+DYNAMIC_CONTACT_SUM_LOWER_MA = float(DEFAULT_SERVO.DYNAMIC_CONTACT_SUM_LOWER_MA)
+DEFAULT_OBJECT_RIGIDITY = str(DEFAULT_SERVO.DEFAULT_OBJECT_RIGIDITY)
+SQUISHABLE_POST_CONTACT_EXTRA_CLOSE_DEG = float(DEFAULT_SERVO.SQUISHABLE_POST_CONTACT_EXTRA_CLOSE_DEG)
+DYNAMIC_PICK_TRACE_DEBUG = bool(DEFAULT_SERVO.DYNAMIC_PICK_TRACE_DEBUG)
+DYNAMIC_PICK_TRACE_QUERY_POS = bool(DEFAULT_SERVO.DYNAMIC_PICK_TRACE_QUERY_POS)
 
 REQUIRE_CONFIRM_BEFORE_PICK = False
 REQUIRE_CONFIRM_BEFORE_PLACE = False
-USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT = False
-USE_PICK_PHI_FOR_PLACE = False
-USE_LOCAL_HEIGHT_AWARE_GRASP_XY = True
-LOCAL_GRASP_RADIUS_MM = 50.0
-LOCAL_GRASP_TOP_REGION_PERCENTILE = 90.0
-LOCAL_GRASP_HEIGHT_DELTA_THRESHOLD_MM = 5.0
-LOCAL_GRASP_BLEND_WEIGHT = 0.35
-LOCAL_GRASP_MAX_SHIFT_MM = 100.0
+USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT = bool(DEFAULT_PLACE.USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT)
+USE_PICK_PHI_FOR_PLACE = bool(DEFAULT_PLACE.USE_PICK_PHI_FOR_PLACE)
+USE_LOCAL_HEIGHT_AWARE_GRASP_XY = bool(DEFAULT_PICK.USE_LOCAL_HEIGHT_AWARE_GRASP_XY)
+LOCAL_GRASP_RADIUS_MM = float(DEFAULT_PICK.LOCAL_GRASP_RADIUS_MM)
+LOCAL_GRASP_TOP_REGION_PERCENTILE = float(DEFAULT_PICK.LOCAL_GRASP_TOP_REGION_PERCENTILE)
+LOCAL_GRASP_HEIGHT_DELTA_THRESHOLD_MM = float(DEFAULT_PICK.LOCAL_GRASP_HEIGHT_DELTA_THRESHOLD_MM)
+LOCAL_GRASP_BLEND_WEIGHT = float(DEFAULT_PICK.LOCAL_GRASP_BLEND_WEIGHT)
+LOCAL_GRASP_MAX_SHIFT_MM = float(DEFAULT_PICK.LOCAL_GRASP_MAX_SHIFT_MM)
 
 # Optional platform-height compensation for pick grasp Z.
 # When enabled, pick surface Z is estimated as:
 #   z_surface = z_ground_model(x_pick, y_pick) + estimated_object_height
 # where z_ground_model is generated by calibrate_platform_z_from_apriltag.py.
-USE_Z_GROUND_MODEL_FOR_PICK_SURFACE = True
-Z_GROUND_MODEL_PATH = Path("data/z_ground_calibration/z_ground_model_latest.json")
+USE_Z_GROUND_MODEL_FOR_PICK_SURFACE = bool(DEFAULT_PICK.USE_Z_GROUND_MODEL_FOR_PICK_SURFACE)
+Z_GROUND_MODEL_PATH = Path(DEFAULT_PICK.Z_GROUND_MODEL_PATH)
 
-REQUIRE_OVERHEAD_XY_FOR_PICK: bool = False
-REFUSE_PICK_IF_TOO_FEW_POINTS: bool = True
+REQUIRE_OVERHEAD_XY_FOR_PICK: bool = bool(DEFAULT_PICK.REQUIRE_OVERHEAD_XY_FOR_PICK)
+REFUSE_PICK_IF_TOO_FEW_POINTS: bool = bool(DEFAULT_PICK.REFUSE_PICK_IF_TOO_FEW_POINTS)
 
-X_SURVEY = 500.0
-Y_SURVEY = -50.0
-Z_SURVEY = 270.0
+X_SURVEY = float(DEFAULT_PICK.X_SURVEY_MM)
+Y_SURVEY = float(DEFAULT_PICK.Y_SURVEY_MM)
+Z_SURVEY = float(DEFAULT_PICK.Z_SURVEY_MM)
 
 # ============================================================
 
@@ -200,8 +201,6 @@ import vision.pick_z_resolver as _z_mod
 import vision.pointcloud as _pointcloud_mod
 
 from config.camera_config import OVERHEAD_INDEX, STEREO_INDEX
-from config.place_zone_io import get_place_zone
-from config.surface_zone_io import get_surface_zone
 from hardware.cameras.overhead_camera import SimpleOverheadCamera
 from hardware.cameras.stereo_apriltag_viewer import SimpleStereoCamera, build_detector
 from motion.pick_z_policy import compute_pick_z_plan
@@ -1106,49 +1105,9 @@ def execute_pick_selected(robot, dbg: CandidateDebug, bundle: dict | None = None
     return True
 
 
-def _load_place_surface_zone() -> dict:
-    try:
-        zone = get_surface_zone(PLACE_SURFACE_ZONE_NAME, SURFACE_ZONE_CONFIG_PATH)
-        out = {
-            "name": zone["name"],
-            "center_xy_mm": list(zone.get("center_xy_mm", [450.0, 250.0])),
-            "surface_z_mm": float(zone["surface_z_mm"]),
-            "default_phi_deg": float(zone.get("default_phi_deg", 0.0)),
-            "width_mm": float(zone.get("width_mm", 120.0)),
-            "depth_mm": float(zone.get("depth_mm", 120.0)),
-            "notes": str(zone.get("notes", "")),
-            "source": "surface_zones",
-            "legacy_place_z_mm": None,
-        }
-    except Exception as exc:
-        print(f"[SURFACE WARN] failed loading {PLACE_SURFACE_ZONE_NAME!r} from {SURFACE_ZONE_CONFIG_PATH}: {exc}")
-        legacy = get_place_zone(PLACE_ZONE_NAME, PLACE_ZONE_CONFIG_PATH)
-        legacy_place = legacy.get("place_z_mm", None)
-        if legacy_place is not None:
-            print("[SURFACE WARN] old place_z_mm detected; treating as destination surface_z_mm for backward compatibility.")
-        out = {
-            "name": legacy["name"],
-            "center_xy_mm": list(legacy["center_xy_mm"]),
-            "surface_z_mm": float(legacy.get("floor_z_mm", legacy_place or 0.0)),
-            "default_phi_deg": float(legacy.get("phi_deg", 0.0)),
-            "width_mm": float(legacy.get("width_mm", 120.0)),
-            "depth_mm": float(legacy.get("depth_mm", 120.0)),
-            "notes": str(legacy.get("notes", "")),
-            "source": "place_zones_legacy",
-            "legacy_place_z_mm": None if legacy_place is None else float(legacy_place),
-        }
-
+def _load_place_scene() -> dict:
+    out = dict(_load_shared_place_scene(DEFAULT_PLACE, verbose=True))
     _display_mod.PLACE_ZONE_FLOOR_Z_MM = float(out["surface_z_mm"])
-    print("[ZONE] loaded destination surface zone:")
-    print(f"  source      = {out['source']}")
-    print(f"  name        = {out['name']}")
-    print(f"  center_xy   = ({out['center_xy_mm'][0]:.1f}, {out['center_xy_mm'][1]:.1f}) mm")
-    print(f"  surface_z   = {out['surface_z_mm']:.1f} mm")
-    if out["legacy_place_z_mm"] is not None:
-        print(f"  place_z_mm  = {out['legacy_place_z_mm']:.1f} mm (legacy) ")
-    print(f"  phi         = {out['default_phi_deg']:.1f} deg")
-    print(f"  size        = {out['width_mm']:.1f} x {out['depth_mm']:.1f} mm")
-    print(f"  notes       = {out.get('notes', '')}")
     return out
 
 
@@ -1184,7 +1143,7 @@ def execute_place_zone(robot, held_object: CandidateDebug | None, *, allow_manua
         print("[PLACE] refused: held_object is None. Use f again and confirm manual override if you are holding an item.")
         return False
 
-    zone = _load_place_surface_zone()
+    zone = _load_place_scene()
     x = float(zone["center_xy_mm"][0])
     y = float(zone["center_xy_mm"][1])
 
@@ -1279,7 +1238,7 @@ def main() -> int:
 
     _hr("PICK ONE PLACE ONE REPEATABILITY", "=")
     print("[MAIN] This is a single-object placement repeatability test, not full bagging.")
-    print(f"[MAIN] place surface zone: {PLACE_SURFACE_ZONE_NAME} from {SURFACE_ZONE_CONFIG_PATH}")
+    print(f"[MAIN] place scene: {PLACE_SCENE_NAME} from {PLACE_SCENE_CONFIG_PATH}")
     print(f"[MAIN] Z_MAX={Z_MAX_MM:.1f} PLACE_APPROACH_Z={PLACE_APPROACH_Z_MM:.1f}")
     print_z_safety_settings("[MAIN] Z safety", config=DEFAULT_Z_SAFETY)
     print(
@@ -1305,7 +1264,7 @@ def main() -> int:
         f"[MAIN] object rigidity default={DEFAULT_OBJECT_RIGIDITY} "
         f"squishable_extra_close_deg={SQUISHABLE_POST_CONTACT_EXTRA_CLOSE_DEG:.1f}"
     )
-    _load_place_surface_zone()
+    _load_place_scene()
     _hr("", "=")
 
     device_info = select_torch_device(use_cuda=USE_CUDA, use_half=USE_HALF)
@@ -1411,7 +1370,7 @@ def main() -> int:
                 robot.send('HOMEJ3')
 
             elif key == "w":
-                _load_place_surface_zone()
+                _load_place_scene()
                 print(f"[STATE] held_object={'yes' if held_object is not None else 'no'}")
 
             elif key == "o" and robot is not None:

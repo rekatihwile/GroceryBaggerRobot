@@ -32,6 +32,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from config.place import DEFAULT_PLACE
+
 TRAINING_IMAGES_DIR = _REPO_ROOT / "Training_Images"
 STEREO_CALIB_PATH   = _REPO_ROOT / "stereo_calibration.npz"
 BUNDLE_PATH         = _REPO_ROOT / "robot_calibration_bundle.npz"
@@ -42,9 +44,9 @@ RAFT_CKPT_PATH      = _REPO_ROOT / "RAFT-Stereo/models/raftstereo-middlebury.pth
 
 YOLO_CONF    = 0.35
 YOLO_IMGSZ   = 640
-PAD_X_MM     = 0.0
-PAD_Y_MM     = 0.0
-PAD_Z_MM     = 20.0
+PAD_X_MM     = float(DEFAULT_PLACE.PAD_X_MM)
+PAD_Y_MM     = float(DEFAULT_PLACE.PAD_Y_MM)
+PAD_Z_MM     = float(DEFAULT_PLACE.PAD_Z_MM)
 MAX_PTS_DISP = 5000   # max scatter points per object in the viewer
 USE_CUDA     = True
 USE_HALF     = True

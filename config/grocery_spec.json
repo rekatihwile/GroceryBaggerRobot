@@ -1,12 +1,12 @@
 {
   "_comment": "Per-class packing properties. weight=kg (approx), fragility 0-1 (1=easily crushed), compliance 0-1 (1=very squishable), pin_slot=place in corner first.",
-  "Diet Coke":        {"weight": 0.38, "fragility": 0.08, "compliance": 0.05, "pin_slot": false},
-  "Lays Chips":       {"weight": 0.01, "fragility": 1.00, "compliance": 1.00, "pin_slot": false},
-  "Chex Mix":         {"weight": 0.40, "fragility": 0.4, "compliance": 0.65, "pin_slot": false},
-  "Paper Towels":     {"weight": 0.5, "fragility": 0.12, "compliance": 0.88, "pin_slot": false},
-  "Pringles":         {"weight": 0.18, "fragility": 0.1, "compliance": 0.20, "pin_slot": false},
-  "Dove Deodorant":   {"weight": 0.16, "fragility": 0.18, "compliance": 0.08, "pin_slot": false},
-  "Carmex Lip Balm":  {"weight": 0.06, "fragility": 0.10, "compliance": 0.08, "pin_slot": false},
-  "Burts Bees":       {"weight": 0.08, "fragility": 0.10, "compliance": 0.08, "pin_slot": false},
-  "Bandaid":          {"weight": 0.06, "fragility": 0.38, "compliance": 0.45, "pin_slot": false}
+  "Diet Coke":        {"weight": 0.38, "fragility": 0.08, "compliance": 0.05, "pin_slot": true},
+  "Lays Chips":       {"weight": 0.01, "fragility": 1.00, "compliance": 1.00, "pin_slot": true},
+  "Chex Mix":         {"weight": 0.40, "fragility": 0.4, "compliance": 0.65, "pin_slot": true},
+  "Paper Towels":     {"weight": 0.5, "fragility": 0.12, "compliance": 0.88, "pin_slot": true},
+  "Pringles":         {"weight": 0.18, "fragility": 0.1, "compliance": 0.20, "pin_slot": true},
+  "Dove Deodorant":   {"weight": 0.16, "fragility": 0.18, "compliance": 0.08, "pin_slot": true},
+  "Carmex Lip Balm":  {"weight": 0.06, "fragility": 0.10, "compliance": 0.08, "pin_slot": true},
+  "Burts Bees":       {"weight": 0.08, "fragility": 0.10, "compliance": 0.08, "pin_slot": true},
+  "Bandaid":          {"weight": 0.06, "fragility": 0.38, "compliance": 0.45, "pin_slot": true}
 }

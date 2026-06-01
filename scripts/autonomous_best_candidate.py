@@ -54,6 +54,15 @@ class BestCandidateConfig:
     min_volume_mm3: float = 1.0
     max_volume_mm3: float | None = 3_000_000.0
 
+    # Reject candidates whose raw stereo surface Z would push the gripper ABOVE
+    # Z_MAX — those are stereo noise phantoms, not real items on the platform.
+    # Items floor-clamped to MIN_PICK_GRASP_Z_MM (125 mm) are intentionally allowed.
+    # GRIPPER_OFFSET_MM (130 mm) + stereo_top_z >= Z_MAX_MM means the item is
+    # impossibly high above the platform.
+    reject_stereo_z_above_platform: bool = True
+    gripper_offset_mm: float = 130.0
+    z_max_mm: float = 275.0
+
 
 @dataclass
 class CandidateDecision:
@@ -294,6 +303,16 @@ def _evaluate_candidate(
         if overlap_label is not None:
             reject.append(f"already_in_placed_box:{overlap_label}")
 
+    if config.reject_stereo_z_above_platform:
+        stereo_top_z = _candidate_stereo_top_z(c)
+        if stereo_top_z is not None:
+            raw_grasp = float(stereo_top_z) + float(config.gripper_offset_mm)
+            if raw_grasp >= float(config.z_max_mm) - 1.0:
+                reject.append(
+                    f"stereo_z_too_high:raw_grasp={raw_grasp:.1f}>={config.z_max_mm:.1f}"
+                    f"(stereo_top={stereo_top_z:.1f}+offset={config.gripper_offset_mm:.0f})"
+                )
+
     if not np.isfinite(volume) or volume < float(config.min_volume_mm3):
         reject.append(f"volume_too_small:{volume:.1f}<{config.min_volume_mm3:.1f}mm3")
     if config.max_volume_mm3 is not None and np.isfinite(volume) and volume > float(config.max_volume_mm3):
@@ -337,6 +356,27 @@ def _candidate_robot_xyz(candidate: Any) -> np.ndarray | None:
         out = arr[:3].astype(np.float64)
         if np.all(np.isfinite(out)):
             return out
+    return None
+
+
+def _candidate_stereo_top_z(candidate: Any) -> float | None:
+    """Return the raw stereo surface Z of the object (robot frame, mm), WITHOUT any
+    z_ground-model correction.  Used to detect phantom candidates whose stereo depth
+    is impossibly high for an item sitting on the platform."""
+    z_debug = getattr(candidate, "z_debug", None)
+    if z_debug is not None:
+        # Prefer the robust percentile surface; fall back to the raw centroid Z.
+        for attr in ("robust_top_z_mm", "z_p95_mm"):
+            val = getattr(z_debug, attr, None)
+            try:
+                f = float(val)
+                if math.isfinite(f):
+                    return f
+            except (TypeError, ValueError):
+                pass
+    xyz = _candidate_robot_xyz(candidate)
+    if xyz is not None:
+        return float(xyz[2])
     return None
 
 

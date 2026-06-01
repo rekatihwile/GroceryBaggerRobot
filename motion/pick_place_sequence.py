@@ -10,7 +10,7 @@ import numpy as np
 
 from motion.pick_z_policy import PickZPlan
 from motion.place_z_policy import PlaceZPlan
-from motion.z_safety_config import ZSafetyConfig, validate_z_command
+from config.motion.z_safety_config import ZSafetyConfig, validate_z_command
 from test_calibration_bundle_live_stereo_z_pickplace import move_cartesian_nonnegative_z
 
 

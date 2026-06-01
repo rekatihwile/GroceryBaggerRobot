@@ -1,0 +1,41 @@
+{
+  "run_timestamp": "20260531_152747",
+  "script": "autonomous_missed_pick_recovery.py",
+  "place_scene_name": "bag_local_aabb_joint",
+  "objects": [
+    {
+      "object_i": 1,
+      "class_name": "Dove Deodorant",
+      "pick_xy_mm": [
+        288.04980256758245,
+        401.47081702435526
+      ],
+      "pick_z_mm": -30.05906592887129,
+      "pick_grasp_z_mm": 99.94093407112871,
+      "pick_phi_deg": 13.64487910673654,
+      "place_xy_mm": null,
+      "place_phi_deg": null,
+      "destination_surface_z_mm": null,
+      "place_result": "pending",
+      "raw_box_center_xyz_mm": null,
+      "raw_box_size_xyz_mm": null,
+      "padded_box_center_xyz_mm": null,
+      "padded_box_size_xyz_mm": null,
+      "detection_class": "Dove Deodorant",
+      "detection_confidence": 0.98095703125,
+      "detection_bbox_xyxy": [
+        126.0625,
+        136.75,
+        251.75,
+        233.75
+      ],
+      "stereo_left": "Stereo_Left_0001.png",
+      "stereo_right": "Stereo_Right_0001.png",
+      "overhead": "Overhead_0001.png",
+      "disparity": "disparity_0001.npz",
+      "points_cam": "points_cam_0001.npz",
+      "left_overlay": "left_overlay_0001.png"
+    }
+  ],
+  "placed_boxes": []
+}

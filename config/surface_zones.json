@@ -1,0 +1,38 @@
+{
+  "default_test_zone": {
+    "name": "default_test_zone",
+    "center_xy_mm": [
+      494.11173109119113,
+      -119.42276195600834
+    ],
+    "surface_z_mm": 0.05890437855880748,
+    "default_phi_deg": 0.07563126375008267,
+    "width_mm": 120.0,
+    "depth_mm": 120.0,
+    "notes": "Default test zone. Recalibrate with scripts/manual_control/calibrate_place_zone.py."
+  },
+  "Test_Zone_Place_V1": {
+    "name": "Test_Zone_Place_V1",
+    "center_xy_mm": [
+      494.11173109119113,
+      -119.42276195600834
+    ],
+    "surface_z_mm": 0.05890437855880748,
+    "default_phi_deg": 0.07563126375008267,
+    "width_mm": 100.0,
+    "depth_mm": 100.0,
+    "notes": "Default test zone. Recalibrate with scripts/manual_control/calibrate_place_zone.py."
+  },
+  "New Bag Test": {
+    "name": "New Bag Test",
+    "center_xy_mm": [
+     210.0,
+      755.0
+    ],
+    "surface_z_mm": -155.0,
+    "default_phi_deg": 0.0,
+    "width_mm": 260.0,
+    "depth_mm": 150.0,
+    "notes": "Canonical bag scene pose for wet run, demos, and saved-photo validation. Update this file when the bag moves."
+  }
+}

@@ -26,6 +26,7 @@ import argparse
 import math
 import re
 import sys
+import time
 import traceback
 from dataclasses import dataclass
 from typing import Any
@@ -45,6 +46,7 @@ GRIPPER_FINGER_WIDTH_MM = 12.0
 GRIPPER_FINGER_HEIGHT_MM = 35.0
 GRIPPER_PALM_WIDTH_MM = 40.0
 GRIPPER_PALM_HEIGHT_MM = 18.0
+BAG_PLATFORM_THICKNESS_MM = 8.0
 ANIM_PICK_HOVER_CLEARANCE_MM = 60.0
 ANIM_TRAVEL_CLEARANCE_MM = 80.0
 ANIM_OPENING_EXTRA_MM = 30.0
@@ -59,10 +61,16 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from config.pick.pick_config import DEFAULT_PICK
 from config.pick.servo_config import DEFAULT_SERVO
-from config.place.place_config import DEFAULT_PLACE
+from config.gripper.gripper_geometry_config import (
+    DEFAULT_GRIPPER_GEOMETRY,
+    held_footprint_dims_mm,
+    opening_length_mm_for_servo_deg,
+)
+from config.place import DEFAULT_PLACE, load_place_scene
 from config.robot_config import ROBOT_CONFIG
 from hardware.robot import JointPose, Robot
 from planning.aabb_utils import AxisAlignedBox3D, aabb_from_object_candidate, make_aabb_from_min_max, pad_aabb
+from planning.bag_local_3d_aabb_planner import aabbs_intersect_3d
 import scripts.autonomous_missed_pick_recovery as auto_mod
 import scripts.capstone.interactive_packing_demo as packing_demo_mod
 import scripts.dry_run_autonomous as dry_mod
@@ -71,6 +79,12 @@ from vision.pick_candidate_builder import CandidateDebug, SurveyState
 from vision.pick_survey_pipeline import load_vision
 from vision.stereo_rectifier import StereoRectifier
 from vision.torch_device import select_torch_device
+
+GRIPPER_FINGER_LENGTH_MM = float(DEFAULT_GRIPPER_GEOMETRY.FINGER_LENGTH_MM)
+GRIPPER_FINGER_WIDTH_MM = float(DEFAULT_GRIPPER_GEOMETRY.FINGER_WIDTH_MM)
+GRIPPER_FINGER_HEIGHT_MM = float(DEFAULT_GRIPPER_GEOMETRY.FINGER_DEPTH_MM)
+GRIPPER_PALM_WIDTH_MM = float(DEFAULT_GRIPPER_GEOMETRY.PALM_WIDTH_MM)
+GRIPPER_PALM_HEIGHT_MM = float(DEFAULT_GRIPPER_GEOMETRY.PALM_HEIGHT_MM)
 
 
 @dataclass
@@ -100,6 +114,9 @@ class PreviewState:
     moving_point_colors_rgb: np.ndarray | None = None
     gripper_boxes: tuple[AxisAlignedBox3D, ...] = ()
     gripper_open: bool = True
+    clearance_box: AxisAlignedBox3D | None = None
+    swept_box: AxisAlignedBox3D | None = None
+    clearance_ok: bool = True
     status_text: str = ""
     attached: bool = False
 
@@ -118,6 +135,17 @@ class PlacementStep:
     scene_object: SceneObject
     placed: packing_demo_mod.PlacedObject
     object_i: int
+    servo_angle_deg: float
+    hold_length_mm: float
+    hold_width_mm: float
+    pick_clearance_ok: bool
+    pick_clearance_reason: str
+    pick_hold_box: AxisAlignedBox3D
+    pick_swept_box: AxisAlignedBox3D
+    place_clearance_ok: bool
+    place_clearance_reason: str
+    place_hold_box: AxisAlignedBox3D
+    place_swept_box: AxisAlignedBox3D
 
 
 _PALETTE = [
@@ -185,6 +213,23 @@ def _build_scene_objects(survey: SurveyState, rect_left_bgr: np.ndarray, bundle:
     return objects
 
 
+def _load_demo_surface_zone() -> dict[str, Any]:
+    surface_zone = dict(load_place_scene(DEFAULT_PLACE, verbose=False))
+    config_floor_z_mm = float(surface_zone.get("config_floor_z_mm", surface_zone.get("surface_z_mm", 0.0)))
+    config_place_z_mm = float(surface_zone.get("config_place_z_mm", config_floor_z_mm))
+
+    visual_floor_z_mm = config_floor_z_mm
+    if str(DEFAULT_PLACE.PLACE_Z_POLICY_MODE).strip().lower().startswith("negative_bin"):
+        visual_floor_z_mm = float(DEFAULT_PLACE.PLACE_NEGATIVE_BIN_PLATFORM_Z_MM)
+    elif np.isfinite(config_place_z_mm):
+        visual_floor_z_mm = config_place_z_mm
+
+    surface_zone["config_floor_z_mm"] = float(config_floor_z_mm)
+    surface_zone["config_place_z_mm"] = float(config_place_z_mm)
+    surface_zone["surface_z_mm"] = float(visual_floor_z_mm)
+    return surface_zone
+
+
 def _planner_objects_from_scene(scene_objects: list[SceneObject]) -> list[packing_demo_mod.ObjectInfo]:
     planner_objects: list[packing_demo_mod.ObjectInfo] = []
     for obj in scene_objects:
@@ -207,6 +252,129 @@ def _planner_objects_from_scene(scene_objects: list[SceneObject]) -> list[packin
     return planner_objects
 
 
+def _servo_angle_deg_for_candidate(dbg: CandidateDebug | None) -> float:
+    if dbg is None:
+        return float(DEFAULT_GRIPPER_GEOMETRY.DEFAULT_SERVO_DEG)
+    value = getattr(dbg.candidate, "initial_servo_angle_deg", None)
+    try:
+        return float(min(DEFAULT_GRIPPER_GEOMETRY.SERVO_MAX_DEG, max(DEFAULT_GRIPPER_GEOMETRY.SERVO_MIN_DEG, float(value))))
+    except (TypeError, ValueError):
+        return float(DEFAULT_GRIPPER_GEOMETRY.DEFAULT_SERVO_DEG)
+
+
+def _object_spans_along_yaw_mm(box: AxisAlignedBox3D, yaw_deg: float) -> tuple[float, float]:
+    sx = float(box.size_xyz_mm[0])
+    sy = float(box.size_xyz_mm[1])
+    phi = math.radians(float(yaw_deg))
+    c = abs(math.cos(phi))
+    s = abs(math.sin(phi))
+    return c * sx + s * sy, s * sx + c * sy
+
+
+def _held_envelope_xy_extents_mm(
+    box: AxisAlignedBox3D,
+    *,
+    yaw_deg: float,
+    servo_angle_deg: float,
+) -> tuple[float, float, float, float]:
+    object_length_mm, object_width_mm = _object_spans_along_yaw_mm(box, yaw_deg)
+    hold_length_mm, hold_width_mm = held_footprint_dims_mm(
+        object_length_along_phi_mm=object_length_mm,
+        object_width_perp_phi_mm=object_width_mm,
+        servo_angle_deg=servo_angle_deg,
+        config=DEFAULT_GRIPPER_GEOMETRY,
+    )
+    phi = math.radians(float(yaw_deg))
+    c = abs(math.cos(phi))
+    s = abs(math.sin(phi))
+    half_x = 0.5 * (c * hold_length_mm + s * hold_width_mm)
+    half_y = 0.5 * (s * hold_length_mm + c * hold_width_mm)
+    return hold_length_mm, hold_width_mm, half_x, half_y
+
+
+def _make_held_envelope_box(
+    box: AxisAlignedBox3D,
+    *,
+    yaw_deg: float,
+    servo_angle_deg: float,
+    label: str,
+) -> AxisAlignedBox3D:
+    hold_length_mm, hold_width_mm, half_x, half_y = _held_envelope_xy_extents_mm(box, yaw_deg=yaw_deg, servo_angle_deg=servo_angle_deg)
+    center_xy = np.asarray(box.center_xyz_mm[:2], dtype=np.float64).reshape(2)
+    gripper_center_z = _gripper_center_z_for_box(box)
+    top_z = gripper_center_z + 0.5 * (GRIPPER_FINGER_LENGTH_MM + GRIPPER_PALM_HEIGHT_MM)
+    return make_aabb_from_min_max(
+        np.array([center_xy[0] - half_x, center_xy[1] - half_y, float(box.min_xyz_mm[2])], dtype=np.float64),
+        np.array([center_xy[0] + half_x, center_xy[1] + half_y, top_z], dtype=np.float64),
+        label=label,
+    )
+
+
+def _make_vertical_swept_volume(start_box: AxisAlignedBox3D, end_box: AxisAlignedBox3D, *, label: str) -> AxisAlignedBox3D:
+    min_xyz = np.minimum(start_box.min_xyz_mm, end_box.min_xyz_mm)
+    max_xyz = np.maximum(start_box.max_xyz_mm, end_box.max_xyz_mm)
+    return make_aabb_from_min_max(min_xyz, max_xyz, label=label)
+
+
+def _boxes_collide_any(candidates: list[AxisAlignedBox3D] | tuple[AxisAlignedBox3D, ...], others: list[AxisAlignedBox3D]) -> bool:
+    return any(aabbs_intersect_3d(candidate, other) for candidate in candidates for other in others)
+
+
+def _within_bag_xy(box: AxisAlignedBox3D, surface_zone: dict[str, Any]) -> bool:
+    center = np.asarray(surface_zone["center_xy_mm"], dtype=np.float64).reshape(2)
+    half_w = 0.5 * float(surface_zone.get("width_mm", 290.0))
+    half_d = 0.5 * float(surface_zone.get("depth_mm", 175.0))
+    min_xy = center - np.array([half_w, half_d], dtype=np.float64)
+    max_xy = center + np.array([half_w, half_d], dtype=np.float64)
+    return bool(np.all(box.min_xyz_mm[:2] >= min_xy - 1e-6) and np.all(box.max_xyz_mm[:2] <= max_xy + 1e-6))
+
+
+def _audit_pick_clearance(
+    scene_object: SceneObject,
+    remaining_scene_objects: list[SceneObject],
+    *,
+    yaw_deg: float,
+    servo_angle_deg: float,
+) -> tuple[bool, str, AxisAlignedBox3D, AxisAlignedBox3D]:
+    pick_hold_box = _make_held_envelope_box(scene_object.raw_box, yaw_deg=yaw_deg, servo_angle_deg=servo_angle_deg, label=f"{scene_object.label}_pick_hold")
+    hover_hold_box = make_aabb_from_min_max(
+        pick_hold_box.min_xyz_mm + np.array([0.0, 0.0, ANIM_PICK_HOVER_CLEARANCE_MM], dtype=np.float64),
+        pick_hold_box.max_xyz_mm + np.array([0.0, 0.0, ANIM_PICK_HOVER_CLEARANCE_MM], dtype=np.float64),
+        label=f"{scene_object.label}_pick_hover",
+    )
+    swept_box = _make_vertical_swept_volume(hover_hold_box, pick_hold_box, label=f"{scene_object.label}_pick_swept")
+    other_boxes = [obj.raw_box for obj in remaining_scene_objects if obj is not scene_object]
+    if _boxes_collide_any([pick_hold_box], other_boxes):
+        return False, "pick_neighbor_collision", pick_hold_box, swept_box
+    if _boxes_collide_any([swept_box], other_boxes):
+        return False, "pick_swept_collision", pick_hold_box, swept_box
+    return True, "ok", pick_hold_box, swept_box
+
+
+def _audit_place_clearance(
+    placed_box: AxisAlignedBox3D,
+    placed_boxes: list[AxisAlignedBox3D],
+    surface_zone: dict[str, Any],
+    *,
+    yaw_deg: float,
+    servo_angle_deg: float,
+) -> tuple[bool, str, AxisAlignedBox3D, AxisAlignedBox3D]:
+    place_hold_box = _make_held_envelope_box(placed_box, yaw_deg=yaw_deg, servo_angle_deg=servo_angle_deg, label=f"{placed_box.label}_place_hold")
+    hover_hold_box = make_aabb_from_min_max(
+        place_hold_box.min_xyz_mm + np.array([0.0, 0.0, ANIM_PICK_HOVER_CLEARANCE_MM], dtype=np.float64),
+        place_hold_box.max_xyz_mm + np.array([0.0, 0.0, ANIM_PICK_HOVER_CLEARANCE_MM], dtype=np.float64),
+        label=f"{placed_box.label}_place_hover",
+    )
+    swept_box = _make_vertical_swept_volume(hover_hold_box, place_hold_box, label=f"{placed_box.label}_place_swept")
+    if not _within_bag_xy(place_hold_box, surface_zone):
+        return False, "bag_wall_clearance", place_hold_box, swept_box
+    if _boxes_collide_any([place_hold_box], placed_boxes):
+        return False, "place_neighbor_collision", place_hold_box, swept_box
+    if _boxes_collide_any([swept_box], placed_boxes):
+        return False, "place_swept_collision", place_hold_box, swept_box
+    return True, "ok", place_hold_box, swept_box
+
+
 def _configure_packing_planner(surface_zone: dict[str, Any]) -> None:
     packing_demo_mod.PAD_X_MM = float(DEFAULT_PLACE.PAD_X_MM)
     packing_demo_mod.PAD_Y_MM = float(DEFAULT_PLACE.PAD_Y_MM)
@@ -223,15 +391,170 @@ def _configure_packing_planner(surface_zone: dict[str, Any]) -> None:
 
 def _compute_packing_sequence(scene_objects: list[SceneObject], surface_zone: dict[str, Any], *, pair_index: int) -> list[PlacementStep]:
     _configure_packing_planner(surface_zone)
+    planner_objects = _planner_objects_from_scene(scene_objects)
     scene_by_det_index = {int(obj.det_index): obj for obj in scene_objects}
-    debug = packing_demo_mod.DebugOptions()
-    state = packing_demo_mod._simulate_full_plan(_planner_objects_from_scene(scene_objects), pair_index=pair_index, debug=debug)
+    state = packing_demo_mod.DemoState(objects=planner_objects)
     steps: list[PlacementStep] = []
-    for placed in state.placed:
-        scene_object = scene_by_det_index.get(int(placed.info.det_index))
-        if scene_object is None:
-            raise RuntimeError(f"missing scene object for det_index={placed.info.det_index}")
-        steps.append(PlacementStep(scene_object=scene_object, placed=placed, object_i=int(placed.object_i)))
+    debug = packing_demo_mod.DebugOptions()
+
+    while True:
+        remaining_infos = [obj for obj in state.objects if obj.det_index not in {p.info.det_index for p in state.placed}]
+        if not remaining_infos:
+            break
+
+        placed_raw_local, placed_padded_local = packing_demo_mod._placed_boxes_local(state)
+        support_props = packing_demo_mod._support_props_by_label(state)
+        planner_weights = packing_demo_mod.PlannerWeights()
+        plan_start = time.perf_counter()
+        results: list[packing_demo_mod.PlacementComputation] = []
+        total_candidates = 0
+
+        for info in remaining_infos:
+            future_specs = [packing_demo_mod._future_item_spec(other) for other in remaining_infos if other.det_index != info.det_index]
+            plan = packing_demo_mod.plan_bag_local_aabb_placement(
+                item_label=info.class_name,
+                raw_size_xyz_mm=info.raw_source_box.size_xyz_mm,
+                padding_min_xyz_mm=info.raw_source_box.min_xyz_mm - info.padded_source_box.min_xyz_mm,
+                padding_max_xyz_mm=info.padded_source_box.max_xyz_mm - info.raw_source_box.max_xyz_mm,
+                bag_size_xyz_mm=packing_demo_mod._bag_size_xyz_mm(),
+                placed_raw_boxes_local=placed_raw_local,
+                placed_padded_boxes_local=placed_padded_local,
+                object_properties=info.object_props,
+                support_properties_by_label=support_props,
+                weights=planner_weights,
+                lower_layer_score_threshold=packing_demo_mod.PLANNER_LAYER_ACCEPT_SCORE,
+                support_min_overlap_ratio=packing_demo_mod.SUPPORT_RATIO_THRESHOLD,
+                max_overhang_ratio=packing_demo_mod.MAX_OVERHANG_RATIO,
+                remaining_item_specs=future_specs,
+                collect_debug_attempts=debug.enabled,
+            )
+            total_candidates += int(plan.candidates_evaluated)
+            final_score = float(plan.score) + packing_demo_mod._joint_selection_bonus(info, plan)
+            raw_box_robot = packing_demo_mod._bag_local_to_robot_box(plan.raw_box_local)
+            padded_box_robot = packing_demo_mod._bag_local_to_robot_box(plan.padded_box_local)
+            results.append(
+                packing_demo_mod.PlacementComputation(
+                    selected_info=info,
+                    target_xy=raw_box_robot.center_xyz_mm[:2].copy(),
+                    target_z_mm=float(raw_box_robot.min_xyz_mm[2]),
+                    raw_box=raw_box_robot,
+                    padded_box=padded_box_robot,
+                    yaw_deg=float(plan.yaw_deg),
+                    orientation_label=plan.orientation_label,
+                    score=final_score,
+                    support_ratio=float(plan.support_ratio),
+                    layer_z_mm=float(plan.layer_z_mm),
+                    future_placeable_count=int(plan.future_placeable_count),
+                    future_total_count=int(plan.future_total_count),
+                    stranded_labels=tuple(plan.stranded_labels),
+                    top_clip_margin_mm=float(plan.top_clip_margin_mm),
+                    future_feasibility_used=bool(plan.future_feasibility_used),
+                    object_candidates_evaluated=int(plan.candidates_evaluated),
+                    object_valid_candidates=int(plan.valid_candidates),
+                    total_candidates_evaluated=0,
+                    planning_time_s=0.0,
+                    planner_notes=f"{plan.notes}; joint_bonus={final_score - float(plan.score):.3f}",
+                    debug_candidates=list(plan.attempts),
+                )
+            )
+
+        lowest_layers = sorted({round(r.layer_z_mm, 6) for r in results})
+        shortlist: list[packing_demo_mod.PlacementComputation] = results
+        for layer_z in lowest_layers:
+            layer_results = [r for r in results if abs(r.layer_z_mm - layer_z) <= 1e-6]
+            if layer_z <= 1e-6 or any(r.score >= packing_demo_mod.PLANNER_LAYER_ACCEPT_SCORE for r in layer_results):
+                shortlist = layer_results
+                break
+        if shortlist and abs(shortlist[0].layer_z_mm) <= 1e-6:
+            max_area = max(float(r.selected_info.raw_source_box.size_xyz_mm[0] * r.selected_info.raw_source_box.size_xyz_mm[1]) for r in shortlist)
+            foundation_shortlist = [
+                r for r in shortlist
+                if float(r.selected_info.raw_source_box.size_xyz_mm[0] * r.selected_info.raw_source_box.size_xyz_mm[1]) >= 0.85 * max_area
+            ]
+            if foundation_shortlist:
+                shortlist = foundation_shortlist
+
+        ranked = sorted(shortlist, key=packing_demo_mod._candidate_sort_key, reverse=True)
+        fallback_ranked = sorted(results, key=packing_demo_mod._candidate_sort_key, reverse=True)
+        remaining_scene_objects = [scene_by_det_index[int(info.det_index)] for info in remaining_infos]
+        placed_boxes = [p.raw_box for p in state.placed]
+        chosen: packing_demo_mod.PlacementComputation | None = None
+        chosen_step: PlacementStep | None = None
+        fallback_step: PlacementStep | None = None
+        fallback_result: packing_demo_mod.PlacementComputation | None = None
+
+        for pool in (ranked, fallback_ranked):
+            for result in pool:
+                scene_object = scene_by_det_index[int(result.selected_info.det_index)]
+                servo_angle_deg = _servo_angle_deg_for_candidate(scene_object.candidate_debug)
+                pick_ok, pick_reason, pick_hold_box, pick_swept_box = _audit_pick_clearance(
+                    scene_object,
+                    remaining_scene_objects,
+                    yaw_deg=float(getattr(scene_object.candidate_debug.candidate, "pick_phi_deg", result.yaw_deg)),
+                    servo_angle_deg=servo_angle_deg,
+                )
+                place_ok, place_reason, place_hold_box, place_swept_box = _audit_place_clearance(
+                    result.raw_box,
+                    placed_boxes,
+                    surface_zone,
+                    yaw_deg=float(result.yaw_deg),
+                    servo_angle_deg=servo_angle_deg,
+                )
+                hold_length_mm, hold_width_mm, _half_x, _half_y = _held_envelope_xy_extents_mm(
+                    result.raw_box,
+                    yaw_deg=float(result.yaw_deg),
+                    servo_angle_deg=servo_angle_deg,
+                )
+                candidate_step = PlacementStep(
+                    scene_object=scene_object,
+                    placed=packing_demo_mod._placed_object_from_plan(result, object_i=len(state.placed) + 1),
+                    object_i=len(state.placed) + 1,
+                    servo_angle_deg=servo_angle_deg,
+                    hold_length_mm=hold_length_mm,
+                    hold_width_mm=hold_width_mm,
+                    pick_clearance_ok=pick_ok,
+                    pick_clearance_reason=pick_reason,
+                    pick_hold_box=pick_hold_box,
+                    pick_swept_box=pick_swept_box,
+                    place_clearance_ok=place_ok,
+                    place_clearance_reason=place_reason,
+                    place_hold_box=place_hold_box,
+                    place_swept_box=place_swept_box,
+                )
+                if fallback_step is None:
+                    fallback_step = candidate_step
+                    fallback_result = result
+                if pick_ok and place_ok:
+                    chosen = result
+                    chosen_step = candidate_step
+                    break
+            if chosen_step is not None:
+                break
+
+        if chosen is None or chosen_step is None:
+            if fallback_result is None or fallback_step is None:
+                raise RuntimeError("no pick/place sequence satisfied gripper clearance checks")
+            chosen = fallback_result
+            chosen_step = fallback_step
+
+        elapsed = time.perf_counter() - plan_start
+        chosen.total_candidates_evaluated = total_candidates
+        chosen.planning_time_s = elapsed
+        if not chosen_step.pick_clearance_ok or not chosen_step.place_clearance_ok:
+            print(
+                f"[PLAN VIOLATION] {chosen.selected_info.class_name} "
+                f"pick={chosen_step.pick_clearance_reason} place={chosen_step.place_clearance_reason}"
+            )
+        else:
+            print(
+                f"[PLAN CLEAR] {chosen.selected_info.class_name} "
+                f"pick={chosen_step.pick_clearance_reason} place={chosen_step.place_clearance_reason} "
+                f"hold={chosen_step.hold_length_mm:.1f}x{chosen_step.hold_width_mm:.1f}mm "
+                f"servo={chosen_step.servo_angle_deg:.1f}deg"
+            )
+
+        state.placed.append(chosen_step.placed)
+        steps.append(chosen_step)
     return steps
 
 
@@ -365,19 +688,19 @@ def _draw_rrpr_arm(ax, robot: Robot, q: JointPose, *, color: str, label: str) ->
 def _make_gripper_boxes_at_pose(center_xyz_mm: np.ndarray, *, yaw_deg: float, opening_width_mm: float, label_prefix: str = "gripper") -> tuple[AxisAlignedBox3D, AxisAlignedBox3D, AxisAlignedBox3D]:
     center = np.asarray(center_xyz_mm, dtype=np.float64).reshape(3)
     spread = max(18.0, float(opening_width_mm))
+    finger_depth_mm = float(GRIPPER_FINGER_HEIGHT_MM)
     is_yaw_90 = abs(float(yaw_deg) % 180.0 - 90.0) <= 1e-3
     if is_yaw_90:
-        finger_size = np.array([GRIPPER_FINGER_LENGTH_MM, GRIPPER_FINGER_WIDTH_MM, GRIPPER_FINGER_HEIGHT_MM], dtype=np.float64)
+        finger_size = np.array([finger_depth_mm, GRIPPER_FINGER_WIDTH_MM, GRIPPER_FINGER_LENGTH_MM], dtype=np.float64)
         left_center = center + np.array([0.0, -0.5 * (spread + GRIPPER_FINGER_WIDTH_MM), 0.0], dtype=np.float64)
         right_center = center + np.array([0.0, 0.5 * (spread + GRIPPER_FINGER_WIDTH_MM), 0.0], dtype=np.float64)
         palm_size = np.array([GRIPPER_PALM_WIDTH_MM, spread + 2.0 * GRIPPER_FINGER_WIDTH_MM + 16.0, GRIPPER_PALM_HEIGHT_MM], dtype=np.float64)
-        palm_center = center + np.array([-0.5 * (GRIPPER_FINGER_LENGTH_MM + GRIPPER_PALM_WIDTH_MM) + 8.0, 0.0, 0.5 * (GRIPPER_PALM_HEIGHT_MM - GRIPPER_FINGER_HEIGHT_MM)], dtype=np.float64)
     else:
-        finger_size = np.array([GRIPPER_FINGER_WIDTH_MM, GRIPPER_FINGER_LENGTH_MM, GRIPPER_FINGER_HEIGHT_MM], dtype=np.float64)
+        finger_size = np.array([GRIPPER_FINGER_WIDTH_MM, finger_depth_mm, GRIPPER_FINGER_LENGTH_MM], dtype=np.float64)
         left_center = center + np.array([-0.5 * (spread + GRIPPER_FINGER_WIDTH_MM), 0.0, 0.0], dtype=np.float64)
         right_center = center + np.array([0.5 * (spread + GRIPPER_FINGER_WIDTH_MM), 0.0, 0.0], dtype=np.float64)
         palm_size = np.array([spread + 2.0 * GRIPPER_FINGER_WIDTH_MM + 16.0, GRIPPER_PALM_WIDTH_MM, GRIPPER_PALM_HEIGHT_MM], dtype=np.float64)
-        palm_center = center + np.array([0.0, -0.5 * (GRIPPER_FINGER_LENGTH_MM + GRIPPER_PALM_WIDTH_MM) + 8.0, 0.5 * (GRIPPER_PALM_HEIGHT_MM - GRIPPER_FINGER_HEIGHT_MM)], dtype=np.float64)
+    palm_center = center + np.array([0.0, 0.0, 0.5 * (GRIPPER_FINGER_LENGTH_MM + GRIPPER_PALM_HEIGHT_MM) - 6.0], dtype=np.float64)
     left_box = make_aabb_from_min_max(left_center - 0.5 * finger_size, left_center + 0.5 * finger_size, label=f"{label_prefix}_finger_l")
     right_box = make_aabb_from_min_max(right_center - 0.5 * finger_size, right_center + 0.5 * finger_size, label=f"{label_prefix}_finger_r")
     palm_box = make_aabb_from_min_max(palm_center - 0.5 * palm_size, palm_center + 0.5 * palm_size, label=f"{label_prefix}_palm")
@@ -396,7 +719,7 @@ def _opening_width_mm_for_box(box: AxisAlignedBox3D, yaw_deg: float, *, extra_mm
 
 def _gripper_center_z_for_box(box: AxisAlignedBox3D) -> float:
     grip_depth = min(float(box.size_xyz_mm[2]) * 0.25, 18.0)
-    return float(box.max_xyz_mm[2] - grip_depth + 0.5 * GRIPPER_FINGER_HEIGHT_MM)
+    return float(box.max_xyz_mm[2] - grip_depth + 0.5 * GRIPPER_FINGER_LENGTH_MM)
 
 
 def _draw_place_zone(ax, surface_zone: dict[str, Any]) -> list[np.ndarray]:
@@ -405,14 +728,28 @@ def _draw_place_zone(ax, surface_zone: dict[str, Any]) -> list[np.ndarray]:
     half_d = 0.5 * float(surface_zone.get("depth_mm", 175.0))
     z0 = float(surface_zone.get("surface_z_mm", 0.0))
     z1 = z0 + PLACE_ZONE_DISPLAY_HEIGHT_MM
+    platform = make_aabb_from_min_max(
+        np.array([center[0] - half_w, center[1] - half_d, z0 - BAG_PLATFORM_THICKNESS_MM], dtype=np.float64),
+        np.array([center[0] + half_w, center[1] + half_d, z0], dtype=np.float64),
+        label=str(surface_zone.get("name", "place_platform")),
+    )
     box = make_aabb_from_min_max(
         np.array([center[0] - half_w, center[1] - half_d, z0], dtype=np.float64),
         np.array([center[0] + half_w, center[1] + half_d, z1], dtype=np.float64),
         label=str(surface_zone.get("name", "place_zone")),
     )
+    _draw_box_3d(ax, platform, "#5ca37e", alpha_edge=0.95, alpha_face=0.12, ls="-")
     _draw_box_3d(ax, box, "#7fd0a8", alpha_edge=0.85, alpha_face=0.04, ls="--")
-    ax.text(box.center_xyz_mm[0], box.center_xyz_mm[1], box.max_xyz_mm[2] + 10.0, str(surface_zone.get("name", "Place Zone")), color="#7fd0a8", fontsize=8, ha="center")
-    return list(_corners(box))
+    ax.text(
+        box.center_xyz_mm[0],
+        box.center_xyz_mm[1],
+        box.max_xyz_mm[2] + 10.0,
+        f"{surface_zone.get('name', 'Place Zone')} | floor z={z0:.1f} mm",
+        color="#7fd0a8",
+        fontsize=8,
+        ha="center",
+    )
+    return list(_corners(platform)) + list(_corners(box))
 
 
 def _draw_platform_bounds(ax) -> list[np.ndarray]:
@@ -436,7 +773,7 @@ def _draw_platform_bounds(ax) -> list[np.ndarray]:
     return [corners]
 
 
-def _render_summary_text(ax, *, selected_dbg: CandidateDebug | None, place_target_xy: np.ndarray | None, place_target_phi_deg: float | None, teensy: dict[str, str], robot: Robot, q_survey: JointPose) -> None:
+def _render_summary_text(ax, *, selected_dbg: CandidateDebug | None, active_step: PlacementStep | None, place_target_xy: np.ndarray | None, place_target_phi_deg: float | None, surface_zone: dict[str, Any], teensy: dict[str, str], robot: Robot, q_survey: JointPose) -> None:
     ax.set_facecolor(_PANEL_BG)
     ax.set_xticks([])
     ax.set_yticks([])
@@ -453,9 +790,13 @@ def _render_summary_text(ax, *, selected_dbg: CandidateDebug | None, place_targe
         f"RRPR links = L1 {robot.cfg.L1_mm:.0f} mm, L2 {robot.cfg.L2_mm:.0f} mm",
         f"Pick phi mode = {DEFAULT_PICK.PICK_PHI_MODE}",
         f"Pick gripper offset = {DEFAULT_PICK.GRIPPER_OFFSET_MM:.1f} mm",
-        f"Place zone = {DEFAULT_PLACE.PLACE_ZONE_NAME}",
-        f"Adj direction = {DEFAULT_PLACE.ADJACENT_DIRECTION}  pad_z = {DEFAULT_PLACE.PAD_Z_MM:.1f} mm",
+        f"Place scene = {DEFAULT_PLACE.PLACE_SCENE_NAME}",
+        f"Bag center XY = ({float(surface_zone['center_xy_mm'][0]):.1f}, {float(surface_zone['center_xy_mm'][1]):.1f})",
+        f"Bag size W x D = {float(surface_zone.get('width_mm', 0.0)):.1f} x {float(surface_zone.get('depth_mm', 0.0)):.1f} mm",
+        f"Config floor/place z = {float(surface_zone.get('config_floor_z_mm', surface_zone.get('surface_z_mm', 0.0))):.1f} / {float(surface_zone.get('config_place_z_mm', surface_zone.get('surface_z_mm', 0.0))):.1f} mm",
+        f"Placement planner = {DEFAULT_PLACE.PLACE_PLANNING_SEQUENCE_NAME}  pad_z = {DEFAULT_PLACE.PAD_Z_MM:.1f} mm",
         "Placement planner = bag-local 3D AABB",
+        f"Demo bag floor z = {float(surface_zone.get('surface_z_mm', 0.0)):.1f} mm",
         f"Servo geometry L = {DEFAULT_SERVO.GRIPPER_GEOMETRY_L_MM:.1f} mm",
         "",
         f"YOLO imgsz/conf = {dry_mod._SURVEY.YOLO_IMGSZ} / {dry_mod._SURVEY.YOLO_CONF:.2f}",
@@ -486,6 +827,13 @@ def _render_summary_text(ax, *, selected_dbg: CandidateDebug | None, place_targe
         lines += [
             f"Place target XY = ({float(place_target_xy[0]):.1f}, {float(place_target_xy[1]):.1f})",
             f"Place phi = {float(place_target_phi_deg):.1f} deg",
+        ]
+    if active_step is not None:
+        lines += [
+            f"Hold footprint LxW = {active_step.hold_length_mm:.1f} x {active_step.hold_width_mm:.1f} mm",
+            f"Servo angle = {active_step.servo_angle_deg:.1f} deg",
+            f"Pick clearance = {active_step.pick_clearance_ok} ({active_step.pick_clearance_reason})",
+            f"Place clearance = {active_step.place_clearance_ok} ({active_step.place_clearance_reason})",
         ]
 
     ax.text(0.02, 0.98, "\n".join(lines), transform=ax.transAxes, va="top", ha="left", color="#dddddd", fontsize=8, family="monospace")
@@ -550,6 +898,7 @@ class SystemViewer:
         self.place_raw_box: AxisAlignedBox3D | None = None
         self.place_padded_box: AxisAlignedBox3D | None = None
         self.current_object_i: int | None = None
+        self.active_step: PlacementStep | None = None
         self.total_objects = len(placement_steps)
         self._set_active_step(self.placement_steps[0] if self.placement_steps else None)
 
@@ -562,6 +911,7 @@ class SystemViewer:
         self.render()
 
     def _set_active_step(self, step: PlacementStep | None) -> None:
+        self.active_step = step
         if step is None:
             self.selected_scene = None
             self.selected_dbg = None
@@ -670,6 +1020,10 @@ class SystemViewer:
             ax3.text(pick_gripper_center[0], pick_gripper_center[1], pick_gripper_center[2] + 22.0, "Pick Gripper", color="#ffe28a", fontsize=8, ha="center")
             for box in pick_gripper:
                 scale_pts.append(_corners(box))
+            if self.active_step is not None:
+                pick_color = "#7dff9c" if self.active_step.pick_clearance_ok else "#ff6d6d"
+                _draw_box_3d(ax3, self.active_step.pick_hold_box, pick_color, alpha_face=0.02, alpha_edge=0.24, ls=":")
+                scale_pts.append(_corners(self.active_step.pick_hold_box))
 
         if self.place_raw_box is not None and self.place_padded_box is not None:
             _draw_box_3d(ax3, self.place_raw_box, "#8dff9e", alpha_face=0.16, alpha_edge=0.95, ls="-")
@@ -694,6 +1048,10 @@ class SystemViewer:
                     scale_pts.append(_corners(box))
             ax3.text(self.place_raw_box.center_xyz_mm[0], self.place_raw_box.center_xyz_mm[1], self.place_raw_box.max_xyz_mm[2] + 16.0, "Planned Place", color="#8dff9e", fontsize=8, ha="center")
             scale_pts.append(_corners(self.place_padded_box))
+            if self.active_step is not None:
+                place_color = "#7dff9c" if self.active_step.place_clearance_ok else "#ff6d6d"
+                _draw_box_3d(ax3, self.active_step.place_hold_box, place_color, alpha_face=0.02, alpha_edge=0.24, ls=":")
+                scale_pts.append(_corners(self.active_step.place_hold_box))
 
         if self.preview is not None:
             if self.preview.moving_points_xyz is not None and self.preview.moving_point_colors_rgb is not None and len(self.preview.moving_points_xyz) > 0:
@@ -715,6 +1073,14 @@ class SystemViewer:
                 _draw_gripper_3d(ax3, self.preview.gripper_boxes, is_open=self.preview.gripper_open, color="#ffd36e" if not self.preview.gripper_open else "#8fe7ff")
                 for box in self.preview.gripper_boxes:
                     scale_pts.append(_corners(box))
+            if self.preview.clearance_box is not None:
+                clearance_color = "#7dff9c" if self.preview.clearance_ok else "#ff6d6d"
+                _draw_box_3d(ax3, self.preview.clearance_box, clearance_color, alpha_face=0.04, alpha_edge=0.35, ls=":")
+                scale_pts.append(_corners(self.preview.clearance_box))
+            if self.preview.swept_box is not None:
+                swept_color = "#7dff9c" if self.preview.clearance_ok else "#ff6d6d"
+                _draw_box_3d(ax3, self.preview.swept_box, swept_color, alpha_face=0.02, alpha_edge=0.22, ls="--")
+                scale_pts.append(_corners(self.preview.swept_box))
 
         ax3.view_init(elev=24, azim=-58)
         if scale_pts:
@@ -733,8 +1099,10 @@ class SystemViewer:
         _render_summary_text(
             self.ax_text,
             selected_dbg=self.selected_dbg,
+            active_step=self.active_step,
             place_target_xy=self.place_target_xy,
             place_target_phi_deg=self.place_target_phi_deg,
+            surface_zone=self.surface_zone,
             teensy=self.teensy_constants,
             robot=self.robot,
             q_survey=self.q_survey,
@@ -802,11 +1170,27 @@ class SystemViewer:
                 moving_padded_box = None
                 moving_points = None
                 moving_colors = None
+                clearance_box = None
+                swept_box = None
+                clearance_ok = True
                 attached = moving_raw_box is not None
                 if moving_raw_box is not None:
                     moving_padded_box = pad_aabb(moving_raw_box, DEFAULT_PLACE.PAD_X_MM, DEFAULT_PLACE.PAD_Y_MM, DEFAULT_PLACE.PAD_Z_MM).padded_box
                     moving_points = _transform_points_for_box(self.selected_scene, moving_raw_box)
                     moving_colors = self.selected_scene.point_colors_rgb
+                if status.startswith("1.") or status.startswith("2.") or status.startswith("3.") or status.startswith("4."):
+                    clearance_box = step.pick_hold_box
+                    swept_box = step.pick_swept_box
+                    clearance_ok = step.pick_clearance_ok
+                elif status.startswith("6.") or status.startswith("7.") or status.startswith("8."):
+                    clearance_box = step.place_hold_box
+                    swept_box = step.place_swept_box
+                    clearance_ok = step.place_clearance_ok
+                pick_place_note = (
+                    f" pick={step.pick_clearance_reason} place={step.place_clearance_reason}"
+                    if not (step.pick_clearance_ok and step.place_clearance_ok)
+                    else f" hold={step.hold_length_mm:.0f}x{step.hold_width_mm:.0f} servo={step.servo_angle_deg:.0f}"
+                )
                 self._present_preview(
                     PreviewState(
                         moving_object=self.selected_scene,
@@ -816,7 +1200,10 @@ class SystemViewer:
                         moving_point_colors_rgb=moving_colors,
                         gripper_boxes=gripper_boxes,
                         gripper_open=gripper_open,
-                        status_text=f"{step.object_i}/{self.total_objects} {self.selected_scene.label} | {status}",
+                        clearance_box=clearance_box,
+                        swept_box=swept_box,
+                        clearance_ok=clearance_ok,
+                        status_text=f"{step.object_i}/{self.total_objects} {self.selected_scene.label} | {status} |{pick_place_note}",
                         attached=attached,
                     )
                 )
@@ -880,7 +1267,7 @@ def main(argv: list[str] | None = None) -> int:
     if not survey.candidates:
         raise RuntimeError("no survey candidates")
 
-    surface_zone = dry_mod._load_surface_zone()
+    surface_zone = _load_demo_surface_zone()
     scene_objects = _build_scene_objects(survey, left_bgr, bundle)
     placement_steps = _compute_packing_sequence(scene_objects, surface_zone, pair_index=pair_index)
     print(f"[WRAPPER] computed {len(placement_steps)} planner placement step(s)")

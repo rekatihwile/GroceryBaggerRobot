@@ -17,29 +17,28 @@ import math
 class ZSafetyConfig:
     # ── Travel ceiling ─────────────────────────────────────────────────────
     # The highest robot Z used for all travel/approach/retract moves.
-    Z_MAX_MM: float = 275.0
+    Z_MAX_MM: float = 270.0
 
     # ── Pick / grasp floor ─────────────────────────────────────────────────
     # PLATFORM_MIN_GRIPPER_Z_MM is the hard stop below which the gripper tip
     # must never descend during a pick.  MIN_PICK_GRASP_Z_MM defaults to the
     # same value; override to allow slightly lower in unusual setups.
-    PLATFORM_MIN_GRIPPER_Z_MM: float = 140.0
-    MIN_PICK_GRASP_Z_MM: float | None = None   # resolved in __post_init__
+    PLATFORM_MIN_GRIPPER_Z_MM: float = 125.0
+    MIN_PICK_GRASP_Z_MM: float = None  # resolved in __post_init__
 
     # ── Place / release floor ──────────────────────────────────────────────
     # Place release gets its own floor so objects can be released near the
     # calibrated surface (which may be close to 0) without forcing the arm
     # up to the pick floor.
-    MIN_PLACE_Z_MM: float | None = 0.0
-
+    MIN_PLACE_Z_MM: float | None = 1.5
     # ── Gripper geometry ───────────────────────────────────────────────────
     # Distance from the robot Z coordinate to the empty gripper tip.
     # Used in pick Z planning: grasp_z = object_surface_z + GRIPPER_OFFSET_MM
-    GRIPPER_OFFSET_MM: float = 165.0
+    GRIPPER_OFFSET_MM: float = 140.0
 
     # ── Z safety padding ───────────────────────────────────────────────────
     MIN_PLACE_ITEM_HEIGHT_MM: float = 0.0
-    PICK_SHORT_ITEM_EXTRA_BUFFER_MM: float = 10.0
+    PICK_SHORT_ITEM_EXTRA_BUFFER_MM: float = 0.5
     # Crush-prevention margin added above the estimated object surface.
     PLACE_Z_SAFETY_PADDING_MM: float = 15.0
 

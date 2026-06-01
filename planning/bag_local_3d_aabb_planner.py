@@ -11,8 +11,8 @@ import numpy as np
 from planning.aabb_utils import AxisAlignedBox3D, make_aabb_from_min_max
 
 _EPS = 1e-6
-_FUTURE_REFINEMENT_CANDIDATES_PER_LAYER = 8
-_FUTURE_LEGALITY_XY_LIMIT = 24
+_FUTURE_REFINEMENT_CANDIDATES_PER_LAYER = 3
+_FUTURE_LEGALITY_XY_LIMIT = 8
 
 
 @dataclass(frozen=True)
@@ -28,9 +28,9 @@ class PlannerWeights:
     z_penalty: float = 1.25
     stack_penalty: float = 0.25
     support_bonus: float = 1.20
-    compactness_bonus: float = 0.32
+    compactness_bonus: float = 0.08   # was 0.32 — reduced to stop items clustering on one side
     wall_contact_bonus: float = 0.22
-    neighbor_contact_bonus: float = 0.20
+    neighbor_contact_bonus: float = 0.06  # was 0.20 — reduced to stop cascade clustering
     support_risk_penalty: float = 1.10
     overhang_penalty: float = 1.00
     fragile_high_bonus: float = 0.45

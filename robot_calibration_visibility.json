@@ -1,18 +1,18 @@
 {
-  "generated_unix_time": 1780084934.676182,
+  "generated_unix_time": 1780256300.9164305,
   "scan_mode_source": "staging_refined",
   "original_grid": {
     "x": [
-      40.0,
-      140.0,
-      240.0,
-      340.0
+      50.0,
+      150.0,
+      250.0,
+      350.0
     ],
     "y": [
-      40.0,
-      190.0,
-      340.0,
-      490.0
+      50.0,
+      200.0,
+      350.0,
+      500.0
     ],
     "z_levels": [
       0.0,
@@ -24,180 +24,184 @@
   "stats": {
     "n_points": 64,
     "n_move_ok": 64,
-    "n_overhead_visible": 53,
-    "n_stereo_visible": 35,
+    "n_overhead_visible": 52,
+    "n_stereo_visible": 33,
     "n_both_visible": 30
   },
   "per_z_visibility": {
     "0.0": {
       "overhead_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          140.0,
-          40.0
+          150.0,
+          50.0
         ],
         [
-          240.0,
-          40.0
+          250.0,
+          50.0
         ],
         [
-          340.0,
-          40.0
+          350.0,
+          50.0
         ],
         [
-          40.0,
-          190.0
+          50.0,
+          200.0
         ],
         [
-          140.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          240.0,
-          190.0
+          250.0,
+          200.0
         ],
         [
-          340.0,
-          190.0
+          350.0,
+          200.0
         ],
         [
-          40.0,
-          340.0
+          50.0,
+          350.0
         ],
         [
-          140.0,
-          340.0
+          150.0,
+          350.0
         ],
         [
-          240.0,
-          340.0
+          250.0,
+          350.0
         ],
         [
-          340.0,
-          340.0
+          350.0,
+          350.0
         ],
         [
-          140.0,
-          490.0
+          150.0,
+          500.0
         ],
         [
-          240.0,
-          490.0
+          250.0,
+          500.0
+        ],
+        [
+          350.0,
+          500.0
         ]
       ],
       "stereo_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          40.0,
-          190.0
+          150.0,
+          50.0
         ],
         [
-          140.0,
-          190.0
+          50.0,
+          200.0
         ],
         [
-          240.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          40.0,
-          340.0
+          250.0,
+          200.0
         ],
         [
-          140.0,
-          340.0
+          50.0,
+          350.0
         ],
         [
-          240.0,
-          340.0
+          150.0,
+          350.0
         ],
         [
-          40.0,
-          490.0
+          250.0,
+          350.0
         ],
         [
-          140.0,
-          490.0
+          50.0,
+          500.0
+        ],
+        [
+          150.0,
+          500.0
         ]
       ],
       "both_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          40.0,
-          190.0
+          150.0,
+          50.0
         ],
         [
-          140.0,
-          190.0
+          50.0,
+          200.0
         ],
         [
-          240.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          40.0,
-          340.0
+          250.0,
+          200.0
         ],
         [
-          140.0,
-          340.0
+          50.0,
+          350.0
         ],
         [
-          240.0,
-          340.0
+          150.0,
+          350.0
         ],
         [
-          140.0,
-          490.0
+          250.0,
+          350.0
+        ],
+        [
+          150.0,
+          500.0
         ]
       ],
       "overhead_missing_xy": [
         [
-          40.0,
-          490.0
-        ],
-        [
-          340.0,
-          490.0
+          50.0,
+          500.0
         ]
       ],
       "stereo_missing_xy": [
         [
-          140.0,
-          40.0
+          250.0,
+          50.0
         ],
         [
-          240.0,
-          40.0
+          350.0,
+          50.0
         ],
         [
-          340.0,
-          40.0
+          350.0,
+          200.0
         ],
         [
-          340.0,
-          190.0
+          350.0,
+          350.0
         ],
         [
-          340.0,
-          340.0
+          250.0,
+          500.0
         ],
         [
-          240.0,
-          490.0
-        ],
-        [
-          340.0,
-          490.0
+          350.0,
+          500.0
         ]
       ],
       "skipped_unsafe_xy": []
@@ -205,184 +209,188 @@
     "50.0": {
       "overhead_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          140.0,
-          40.0
+          150.0,
+          50.0
         ],
         [
-          240.0,
-          40.0
+          250.0,
+          50.0
         ],
         [
-          340.0,
-          40.0
+          350.0,
+          50.0
         ],
         [
-          40.0,
-          190.0
+          50.0,
+          200.0
         ],
         [
-          140.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          240.0,
-          190.0
+          250.0,
+          200.0
         ],
         [
-          340.0,
-          190.0
+          350.0,
+          200.0
         ],
         [
-          40.0,
-          340.0
+          50.0,
+          350.0
         ],
         [
-          140.0,
-          340.0
+          150.0,
+          350.0
         ],
         [
-          240.0,
-          340.0
+          250.0,
+          350.0
         ],
         [
-          340.0,
-          340.0
+          350.0,
+          350.0
         ],
         [
-          140.0,
-          490.0
+          150.0,
+          500.0
         ],
         [
-          240.0,
-          490.0
+          250.0,
+          500.0
         ],
         [
-          340.0,
-          490.0
+          350.0,
+          500.0
         ]
       ],
       "stereo_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          140.0,
-          40.0
+          150.0,
+          50.0
         ],
         [
-          40.0,
-          190.0
+          50.0,
+          200.0
         ],
         [
-          140.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          240.0,
-          190.0
+          350.0,
+          200.0
         ],
         [
-          40.0,
-          340.0
+          50.0,
+          350.0
         ],
         [
-          140.0,
-          340.0
+          150.0,
+          350.0
         ],
         [
-          240.0,
-          340.0
+          250.0,
+          350.0
         ],
         [
-          340.0,
-          340.0
+          350.0,
+          350.0
         ],
         [
-          40.0,
-          490.0
+          50.0,
+          500.0
         ],
         [
-          140.0,
-          490.0
+          150.0,
+          500.0
         ],
         [
-          240.0,
-          490.0
+          250.0,
+          500.0
+        ],
+        [
+          350.0,
+          500.0
         ]
       ],
       "both_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          140.0,
-          40.0
+          150.0,
+          50.0
         ],
         [
-          40.0,
-          190.0
+          50.0,
+          200.0
         ],
         [
-          140.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          240.0,
-          190.0
+          350.0,
+          200.0
         ],
         [
-          40.0,
-          340.0
+          50.0,
+          350.0
         ],
         [
-          140.0,
-          340.0
+          150.0,
+          350.0
         ],
         [
-          240.0,
-          340.0
+          250.0,
+          350.0
         ],
         [
-          340.0,
-          340.0
+          350.0,
+          350.0
         ],
         [
-          140.0,
-          490.0
+          150.0,
+          500.0
         ],
         [
-          240.0,
-          490.0
+          250.0,
+          500.0
+        ],
+        [
+          350.0,
+          500.0
         ]
       ],
       "overhead_missing_xy": [
         [
-          40.0,
-          490.0
+          50.0,
+          500.0
         ]
       ],
       "stereo_missing_xy": [
         [
-          240.0,
-          40.0
+          250.0,
+          50.0
         ],
         [
-          340.0,
-          40.0
+          350.0,
+          50.0
         ],
         [
-          340.0,
-          190.0
-        ],
-        [
-          340.0,
-          490.0
+          250.0,
+          200.0
         ]
       ],
       "skipped_unsafe_xy": []
@@ -390,172 +398,164 @@
     "150.0": {
       "overhead_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          140.0,
-          40.0
+          150.0,
+          50.0
         ],
         [
-          240.0,
-          40.0
+          250.0,
+          50.0
         ],
         [
-          340.0,
-          40.0
+          50.0,
+          200.0
         ],
         [
-          40.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          140.0,
-          190.0
+          250.0,
+          200.0
         ],
         [
-          240.0,
-          190.0
+          50.0,
+          350.0
         ],
         [
-          340.0,
-          190.0
+          150.0,
+          350.0
         ],
         [
-          40.0,
-          340.0
+          250.0,
+          350.0
         ],
         [
-          140.0,
-          340.0
+          150.0,
+          500.0
         ],
         [
-          240.0,
-          340.0
-        ],
-        [
-          340.0,
-          340.0
-        ],
-        [
-          140.0,
-          490.0
-        ],
-        [
-          240.0,
-          490.0
-        ],
-        [
-          340.0,
-          490.0
+          250.0,
+          500.0
         ]
       ],
       "stereo_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          40.0,
-          190.0
+          50.0,
+          200.0
         ],
         [
-          140.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          40.0,
-          340.0
+          50.0,
+          350.0
         ],
         [
-          140.0,
-          340.0
+          150.0,
+          350.0
         ],
         [
-          240.0,
-          340.0
+          250.0,
+          350.0
         ],
         [
-          40.0,
-          490.0
-        ],
-        [
-          140.0,
-          490.0
-        ],
-        [
-          240.0,
-          490.0
+          50.0,
+          500.0
         ]
       ],
       "both_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          40.0,
-          190.0
+          50.0,
+          200.0
         ],
         [
-          140.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          40.0,
-          340.0
+          50.0,
+          350.0
         ],
         [
-          140.0,
-          340.0
+          150.0,
+          350.0
         ],
         [
-          240.0,
-          340.0
-        ],
-        [
-          140.0,
-          490.0
-        ],
-        [
-          240.0,
-          490.0
+          250.0,
+          350.0
         ]
       ],
       "overhead_missing_xy": [
         [
-          40.0,
-          490.0
+          350.0,
+          50.0
+        ],
+        [
+          350.0,
+          200.0
+        ],
+        [
+          350.0,
+          350.0
+        ],
+        [
+          50.0,
+          500.0
+        ],
+        [
+          350.0,
+          500.0
         ]
       ],
       "stereo_missing_xy": [
         [
-          140.0,
-          40.0
+          150.0,
+          50.0
         ],
         [
-          240.0,
-          40.0
+          250.0,
+          50.0
         ],
         [
-          340.0,
-          40.0
+          350.0,
+          50.0
         ],
         [
-          240.0,
-          190.0
+          250.0,
+          200.0
         ],
         [
-          340.0,
-          190.0
+          350.0,
+          200.0
         ],
         [
-          340.0,
-          340.0
+          350.0,
+          350.0
         ],
         [
-          340.0,
-          490.0
+          150.0,
+          500.0
+        ],
+        [
+          250.0,
+          500.0
+        ],
+        [
+          350.0,
+          500.0
         ]
       ],
       "skipped_unsafe_xy": []
@@ -563,152 +563,152 @@
     "200.0": {
       "overhead_visible_xy": [
         [
-          40.0,
-          190.0
+          50.0,
+          50.0
         ],
         [
-          140.0,
-          190.0
+          150.0,
+          50.0
         ],
         [
-          240.0,
-          190.0
+          250.0,
+          50.0
         ],
         [
-          40.0,
-          340.0
+          50.0,
+          200.0
         ],
         [
-          140.0,
-          340.0
+          150.0,
+          200.0
         ],
         [
-          240.0,
-          340.0
+          250.0,
+          200.0
         ],
         [
-          140.0,
-          490.0
+          50.0,
+          350.0
         ],
         [
-          240.0,
-          490.0
+          150.0,
+          350.0
         ],
         [
-          340.0,
-          490.0
+          250.0,
+          350.0
+        ],
+        [
+          150.0,
+          500.0
+        ],
+        [
+          250.0,
+          500.0
         ]
       ],
       "stereo_visible_xy": [
         [
-          40.0,
-          40.0
+          50.0,
+          200.0
         ],
         [
-          40.0,
-          190.0
+          50.0,
+          350.0
         ],
         [
-          40.0,
-          340.0
-        ],
-        [
-          140.0,
-          340.0
-        ],
-        [
-          40.0,
-          490.0
+          150.0,
+          350.0
         ]
       ],
       "both_visible_xy": [
         [
-          40.0,
-          190.0
+          50.0,
+          200.0
         ],
         [
-          40.0,
-          340.0
+          50.0,
+          350.0
         ],
         [
-          140.0,
-          340.0
+          150.0,
+          350.0
         ]
       ],
       "overhead_missing_xy": [
         [
-          40.0,
-          40.0
+          350.0,
+          50.0
         ],
         [
-          140.0,
-          40.0
+          350.0,
+          200.0
         ],
         [
-          240.0,
-          40.0
+          350.0,
+          350.0
         ],
         [
-          340.0,
-          40.0
+          50.0,
+          500.0
         ],
         [
-          340.0,
-          190.0
-        ],
-        [
-          340.0,
-          340.0
-        ],
-        [
-          40.0,
-          490.0
+          350.0,
+          500.0
         ]
       ],
       "stereo_missing_xy": [
         [
-          140.0,
-          40.0
+          50.0,
+          50.0
         ],
         [
-          240.0,
-          40.0
+          150.0,
+          50.0
         ],
         [
-          340.0,
-          40.0
+          250.0,
+          50.0
         ],
         [
-          140.0,
-          190.0
+          350.0,
+          50.0
         ],
         [
-          240.0,
-          190.0
+          150.0,
+          200.0
         ],
         [
-          340.0,
-          190.0
+          250.0,
+          200.0
         ],
         [
-          240.0,
-          340.0
+          350.0,
+          200.0
         ],
         [
-          340.0,
-          340.0
+          250.0,
+          350.0
         ],
         [
-          140.0,
-          490.0
+          350.0,
+          350.0
         ],
         [
-          240.0,
-          490.0
+          50.0,
+          500.0
         ],
         [
-          340.0,
-          490.0
+          150.0,
+          500.0
+        ],
+        [
+          250.0,
+          500.0
+        ],
+        [
+          350.0,
+          500.0
         ]
       ],
       "skipped_unsafe_xy": []
@@ -716,8 +716,8 @@
   },
   "scan_points": [
     {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 40.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -729,8 +729,21 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 40.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 50.0,
+      "z_cmd_mm": 0.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -742,8 +755,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 40.0,
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -755,8 +768,47 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 40.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 0.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 0.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 0.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 200.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -768,8 +820,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 190.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 350.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -781,8 +833,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 190.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 350.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -794,8 +846,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 190.0,
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 350.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -807,8 +859,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 190.0,
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 350.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -820,60 +872,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 0.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 0.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 0.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 0.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 500.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -885,8 +885,8 @@
       "reason": "move ok but overhead not visible"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 500.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -898,8 +898,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 500.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -911,21 +911,21 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 500.0,
       "z_cmd_mm": 0.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
       "move_ok": true,
-      "overhead_visible": false,
+      "overhead_visible": true,
       "stereo_visible": false,
       "both_visible": false,
-      "reason": "move ok but overhead not visible"
+      "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 40.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -937,8 +937,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 40.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -950,21 +950,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 40.0,
-      "z_cmd_mm": 50.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 40.0,
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -976,47 +963,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 190.0,
-      "z_cmd_mm": 50.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 190.0,
-      "z_cmd_mm": 50.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 190.0,
-      "z_cmd_mm": 50.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 190.0,
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1028,8 +976,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 340.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 200.0,
       "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1041,8 +989,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 340.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 200.0,
       "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1054,73 +1002,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 50.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 50.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 490.0,
-      "z_cmd_mm": 50.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": false,
-      "stereo_visible": true,
-      "both_visible": false,
-      "reason": "move ok but overhead not visible"
-    },
-    {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 490.0,
-      "z_cmd_mm": 50.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 490.0,
-      "z_cmd_mm": 50.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 200.0,
       "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1132,9 +1015,9 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 40.0,
-      "z_cmd_mm": 150.0,
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
@@ -1145,48 +1028,9 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 40.0,
-      "z_cmd_mm": 150.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 40.0,
-      "z_cmd_mm": 150.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 40.0,
-      "z_cmd_mm": 150.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 190.0,
-      "z_cmd_mm": 150.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
@@ -1197,9 +1041,9 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 190.0,
-      "z_cmd_mm": 150.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
@@ -1210,35 +1054,9 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 190.0,
-      "z_cmd_mm": 150.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 190.0,
-      "z_cmd_mm": 150.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 150.0,
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
@@ -1249,9 +1067,9 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 150.0,
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
@@ -1262,35 +1080,9 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 150.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 150.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 490.0,
-      "z_cmd_mm": 150.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 500.0,
+      "z_cmd_mm": 50.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
@@ -1301,8 +1093,47 @@
       "reason": "move ok but overhead not visible"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 500.0,
+      "z_cmd_mm": 50.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 500.0,
+      "z_cmd_mm": 50.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 500.0,
+      "z_cmd_mm": 50.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 150.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1314,21 +1145,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 490.0,
-      "z_cmd_mm": 150.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": true,
-      "stereo_visible": true,
-      "both_visible": true,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 150.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1340,22 +1158,22 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 40.0,
-      "z_cmd_mm": 200.0,
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 50.0,
+      "z_cmd_mm": 150.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
       "move_ok": true,
-      "overhead_visible": false,
-      "stereo_visible": true,
+      "overhead_visible": true,
+      "stereo_visible": false,
       "both_visible": false,
-      "reason": "move ok but overhead not visible"
+      "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 40.0,
-      "z_cmd_mm": 200.0,
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 50.0,
+      "z_cmd_mm": 150.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
@@ -1366,35 +1184,9 @@
       "reason": "move ok but overhead not visible"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 40.0,
-      "z_cmd_mm": 200.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": false,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "move ok but overhead not visible"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 40.0,
-      "z_cmd_mm": 200.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": false,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "move ok but overhead not visible"
-    },
-    {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 190.0,
-      "z_cmd_mm": 200.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 150.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
@@ -1405,8 +1197,151 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 190.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": false,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "move ok but overhead not visible"
+    },
+    {
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": false,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "move ok but overhead not visible"
+    },
+    {
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 500.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": false,
+      "stereo_visible": true,
+      "both_visible": false,
+      "reason": "move ok but overhead not visible"
+    },
+    {
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 500.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 500.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 500.0,
+      "z_cmd_mm": 150.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": false,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "move ok but overhead not visible"
+    },
+    {
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 200.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1418,8 +1353,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 190.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 200.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1431,8 +1366,21 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 190.0,
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 50.0,
+      "z_cmd_mm": 200.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 50.0,
       "z_cmd_mm": 200.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1444,8 +1392,8 @@
       "reason": "move ok but overhead not visible"
     },
     {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 340.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 200.0,
       "z_cmd_mm": 200.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1457,8 +1405,47 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 340.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 200.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 200.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 200.0,
+      "z_cmd_mm": 200.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": false,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "move ok but overhead not visible"
+    },
+    {
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 350.0,
       "z_cmd_mm": 200.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1470,47 +1457,60 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 340.0,
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 350.0,
       "z_cmd_mm": 200.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
       "move_ok": true,
       "overhead_visible": true,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "valid overhead"
-    },
-    {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 340.0,
-      "z_cmd_mm": 200.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": false,
-      "stereo_visible": false,
-      "both_visible": false,
-      "reason": "move ok but overhead not visible"
-    },
-    {
-      "x_cmd_mm": 40.0,
-      "y_cmd_mm": 490.0,
-      "z_cmd_mm": 200.0,
-      "reachable_ik": true,
-      "target_safe": true,
-      "path_safe": true,
-      "move_ok": true,
-      "overhead_visible": false,
       "stereo_visible": true,
+      "both_visible": true,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 200.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": true,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "valid overhead"
+    },
+    {
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 350.0,
+      "z_cmd_mm": 200.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": false,
+      "stereo_visible": false,
       "both_visible": false,
       "reason": "move ok but overhead not visible"
     },
     {
-      "x_cmd_mm": 140.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 50.0,
+      "y_cmd_mm": 500.0,
+      "z_cmd_mm": 200.0,
+      "reachable_ik": true,
+      "target_safe": true,
+      "path_safe": true,
+      "move_ok": true,
+      "overhead_visible": false,
+      "stereo_visible": false,
+      "both_visible": false,
+      "reason": "move ok but overhead not visible"
+    },
+    {
+      "x_cmd_mm": 150.0,
+      "y_cmd_mm": 500.0,
       "z_cmd_mm": 200.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1522,8 +1522,8 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 240.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 250.0,
+      "y_cmd_mm": 500.0,
       "z_cmd_mm": 200.0,
       "reachable_ik": true,
       "target_safe": true,
@@ -1535,17 +1535,17 @@
       "reason": "valid overhead"
     },
     {
-      "x_cmd_mm": 340.0,
-      "y_cmd_mm": 490.0,
+      "x_cmd_mm": 350.0,
+      "y_cmd_mm": 500.0,
       "z_cmd_mm": 200.0,
       "reachable_ik": true,
       "target_safe": true,
       "path_safe": true,
       "move_ok": true,
-      "overhead_visible": true,
+      "overhead_visible": false,
       "stereo_visible": false,
       "both_visible": false,
-      "reason": "valid overhead"
+      "reason": "move ok but overhead not visible"
     }
   ],
   "refined_grid": {
@@ -1554,109 +1554,104 @@
     "axes_per_z": {
       "0.0": {
         "x": [
-          40.0,
-          68.571,
-          97.143,
-          125.714,
-          154.286,
-          182.857,
-          211.429,
-          240.0
+          50.0,
+          78.571,
+          107.143,
+          135.714,
+          164.286,
+          192.857,
+          221.429,
+          250.0
         ],
         "y": [
-          40.0,
-          70.0,
-          100.0,
-          130.0,
-          160.0,
-          190.0,
-          220.0,
-          250.0,
-          280.0,
-          310.0,
-          340.0,
-          370.0,
-          400.0,
-          430.0,
-          460.0,
-          490.0
+          50.0,
+          80.0,
+          110.0,
+          140.0,
+          170.0,
+          200.0,
+          230.0,
+          260.0,
+          290.0,
+          320.0,
+          350.0,
+          380.0,
+          410.0,
+          440.0,
+          470.0,
+          500.0
         ]
       },
       "50.0": {
         "x": [
-          40.0,
-          70.0,
-          100.0,
-          130.0,
-          160.0,
-          190.0,
-          220.0,
-          250.0,
-          280.0,
-          310.0,
-          340.0
+          50.0,
+          80.0,
+          110.0,
+          140.0,
+          170.0,
+          200.0,
+          230.0,
+          260.0,
+          290.0,
+          320.0,
+          350.0
         ],
         "y": [
-          40.0,
-          70.0,
-          100.0,
-          130.0,
-          160.0,
-          190.0,
-          220.0,
-          250.0,
-          280.0,
-          310.0,
-          340.0,
-          370.0,
-          400.0,
-          430.0,
-          460.0,
-          490.0
+          50.0,
+          80.0,
+          110.0,
+          140.0,
+          170.0,
+          200.0,
+          230.0,
+          260.0,
+          290.0,
+          320.0,
+          350.0,
+          380.0,
+          410.0,
+          440.0,
+          470.0,
+          500.0
         ]
       },
       "150.0": {
         "x": [
-          40.0,
-          68.571,
-          97.143,
-          125.714,
-          154.286,
-          182.857,
-          211.429,
-          240.0
+          50.0,
+          78.571,
+          107.143,
+          135.714,
+          164.286,
+          192.857,
+          221.429,
+          250.0
         ],
         "y": [
-          40.0,
-          70.0,
-          100.0,
-          130.0,
-          160.0,
-          190.0,
-          220.0,
-          250.0,
-          280.0,
-          310.0,
-          340.0,
-          370.0,
-          400.0,
-          430.0,
-          460.0,
-          490.0
+          50.0,
+          80.0,
+          110.0,
+          140.0,
+          170.0,
+          200.0,
+          230.0,
+          260.0,
+          290.0,
+          320.0,
+          350.0
         ]
       },
       "200.0": {
         "x": [
-          40.0,
-          140.0,
-          240.0,
-          340.0
+          50.0,
+          150.0,
+          250.0,
+          350.0
         ],
         "y": [
-          40.0,
-          190.0,
-          340.0,
-          490.0
+          50.0,
+          200.0,
+          350.0,
+          500.0
         ]
       }
     },
@@ -1664,41 +1659,41 @@
       "0.0": {
         "source": "bbox_of_both_visible",
         "bbox": {
-          "x_min": 40.0,
-          "x_max": 240.0,
-          "y_min": 40.0,
-          "y_max": 490.0
+          "x_min": 50.0,
+          "x_max": 250.0,
+          "y_min": 50.0,
+          "y_max": 500.0
         },
         "step_mm": 30.0,
-        "n_both_visible_used": 8,
+        "n_both_visible_used": 9,
         "n_x": 8,
         "n_y": 16
       },
       "50.0": {
         "source": "bbox_of_both_visible",
         "bbox": {
-          "x_min": 40.0,
-          "x_max": 340.0,
-          "y_min": 40.0,
-          "y_max": 490.0
+          "x_min": 50.0,
+          "x_max": 350.0,
+          "y_min": 50.0,
+          "y_max": 500.0
         },
         "step_mm": 30.0,
-        "n_both_visible_used": 11,
+        "n_both_visible_used": 12,
         "n_x": 11,
         "n_y": 16
       },
       "150.0": {
         "source": "bbox_of_both_visible",
         "bbox": {
-          "x_min": 40.0,
-          "x_max": 240.0,
-          "y_min": 40.0,
-          "y_max": 490.0
+          "x_min": 50.0,
+          "x_max": 250.0,
+          "y_min": 50.0,
+          "y_max": 350.0
         },
         "step_mm": 30.0,
-        "n_both_visible_used": 8,
+        "n_both_visible_used": 6,
         "n_x": 8,
-        "n_y": 16
+        "n_y": 11
       },
       "200.0": {
         "source": "fallback_original_grid",

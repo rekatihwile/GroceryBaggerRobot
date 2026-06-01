@@ -139,7 +139,6 @@ def build_candidate_from_track(
         print(f"[TRACK {track.track_id}] best frame missing")
         return None
 
-    det = obs.detection
     print(
         f"[RAFT] track {track.track_id} {track.class_name}: "
         f"best_frame={obs.frame_i + 1}, hits={track.hit_count}/{BURST_COUNT}"
@@ -151,6 +150,29 @@ def build_candidate_from_track(
         print(f"[RAFT] track {track.track_id}: failed: {exc}")
         return None
 
+    return build_candidate_from_detection(
+        track=track,
+        frame=frame,
+        det=obs.detection,
+        disparity=disparity,
+        stereo_calib=stereo_calib,
+        robot=robot,
+        bundle=bundle,
+        index=index,
+    )
+
+
+def build_candidate_from_detection(
+    *,
+    track: DetectionTrack,
+    frame: BurstFrame,
+    det: YOLODetection,
+    disparity: np.ndarray,
+    stereo_calib: dict,
+    robot: Any,
+    bundle: dict,
+    index: int,
+) -> CandidateDebug | None:
     disp_color = colorize_disparity(disparity)
     disp_overlay = overlay_detection_on_image(
         disp_color,

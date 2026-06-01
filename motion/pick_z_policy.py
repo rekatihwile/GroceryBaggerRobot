@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from motion.z_safety_config import (
+from config.motion.z_safety_config import (
     DEFAULT_Z_SAFETY,
     ZSafetyConfig,
     z_safety_config_with_overrides,

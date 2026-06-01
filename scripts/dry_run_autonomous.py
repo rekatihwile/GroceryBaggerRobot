@@ -47,7 +47,10 @@ if str(REPO_ROOT) not in sys.path:
 from config.survey.survey_config import DEFAULT_SURVEY, SurveyConfig
 from config.pick.pick_config import DEFAULT_PICK, PickConfig
 from config.place.place_config import DEFAULT_PLACE, PlaceConfig
+from config.place.place_scene_config import load_place_scene
 from config.pick.servo_config import DEFAULT_SERVO, ServoConfig
+from config.runtime_context import resolve_runtime_context, resolve_workspace_profile_name
+from config.workspace.workspace_config import get_workspace_filter_config, workspace_bounds_mm
 from config.motion.z_safety_config import DEFAULT_Z_SAFETY
 
 # Override individual fields here without touching the shared defaults:
@@ -55,10 +58,12 @@ _SURVEY = DEFAULT_SURVEY
 _PICK   = DEFAULT_PICK
 _PLACE  = DEFAULT_PLACE
 _SERVO  = DEFAULT_SERVO
+_RUNTIME_CONTEXT = resolve_runtime_context("saved_photo_test")
+_WORKSPACE = get_workspace_filter_config(resolve_workspace_profile_name(_RUNTIME_CONTEXT.workspace_profile_name))
 
-# Candidate-filter workspace bounds (mirror autonomous_missed_pick_recovery.py)
-PLATFORM_GRID_X_MM = list(range(40, 380, 100))
-PLATFORM_GRID_Y_MM = list(range(40, 515, 150))
+# Candidate-filter workspace bounds.
+PLATFORM_GRID_X_MM = [float(v) for v in _WORKSPACE.platform_grid_x_mm]
+PLATFORM_GRID_Y_MM = [float(v) for v in _WORKSPACE.platform_grid_y_mm]
 PLATFORM_X_MIN_MM = float(min(PLATFORM_GRID_X_MM))
 PLATFORM_X_MAX_MM = float(max(PLATFORM_GRID_X_MM))
 PLATFORM_Y_MIN_MM = float(min(PLATFORM_GRID_Y_MM))
@@ -379,23 +384,31 @@ def survey_from_images(
 # ── Candidate filter config ────────────────────────────────────────────────
 
 def _best_candidate_config() -> BestCandidateConfig:
+    workspace = _WORKSPACE
+    wx0, wx1, wy0, wy1 = workspace_bounds_mm(workspace)
     return BestCandidateConfig(
-        require_positive_platform_xy=True,
-        platform_min_x_mm=PLATFORM_X_MIN_MM,
-        platform_min_y_mm=PLATFORM_Y_MIN_MM,
-        workspace_x_min_mm=PLATFORM_X_MIN_MM,
-        workspace_x_max_mm=PLATFORM_X_MAX_MM,
-        workspace_y_min_mm=PLATFORM_Y_MIN_MM,
-        workspace_y_max_mm=PLATFORM_Y_MAX_MM,
-        require_robotframe_centroid_xy_in_platform_bounds=False,
+        require_positive_platform_xy=bool(workspace.require_positive_platform_xy),
+        platform_min_x_mm=wx0 if workspace.require_positive_platform_xy else None,
+        platform_min_y_mm=wy0 if workspace.require_positive_platform_xy else None,
+        workspace_x_min_mm=wx0 if workspace.enable_workspace_bounds else None,
+        workspace_x_max_mm=wx1 if workspace.enable_workspace_bounds else None,
+        workspace_y_min_mm=wy0 if workspace.enable_workspace_bounds else None,
+        workspace_y_max_mm=wy1 if workspace.enable_workspace_bounds else None,
+        require_robotframe_centroid_xy_in_platform_bounds=bool(workspace.enable_robotframe_centroid_xy_platform_bounds),
+        robotframe_centroid_x_min_mm=wx0 if workspace.enable_robotframe_centroid_xy_platform_bounds else None,
+        robotframe_centroid_x_max_mm=wx1 if workspace.enable_robotframe_centroid_xy_platform_bounds else None,
+        robotframe_centroid_y_min_mm=wy0 if workspace.enable_robotframe_centroid_xy_platform_bounds else None,
+        robotframe_centroid_y_max_mm=wy1 if workspace.enable_robotframe_centroid_xy_platform_bounds else None,
         use_robot_reach_check=False,    # no robot in dry run
         require_soft_pose_safe=False,   # no robot in dry run
-        center_gate_enabled=False,
-        cluster_gate_enabled=False,
-        reject_placed_overlap=True,
-        placed_overlap_margin_mm=25.0,
-        min_volume_mm3=1.0,
-        max_volume_mm3=3_000_000.0,
+        center_gate_enabled=bool(workspace.center_gate_enabled),
+        max_image_center_norm_radius=float(workspace.max_image_center_norm_radius),
+        cluster_gate_enabled=bool(workspace.cluster_gate_enabled),
+        max_cluster_distance_mm=float(workspace.max_cluster_distance_mm),
+        reject_placed_overlap=bool(workspace.reject_placed_overlap),
+        placed_overlap_margin_mm=float(workspace.placed_overlap_margin_mm),
+        min_volume_mm3=float(workspace.min_volume_mm3),
+        max_volume_mm3=float(workspace.max_volume_cm3) * 1000.0,
     )
 
 
@@ -423,7 +436,7 @@ def _compute_place_target(
         plan = compute_adjacent_placement(
             reference_padded_box=placed_boxes[-1],
             moving_padded_box=padded,
-            direction=_PLACE.ADJACENT_DIRECTION,
+            direction="left",
             surface_z_mm=surface_z,
             place_phi_deg=place_phi,
         )
@@ -438,28 +451,7 @@ def _compute_place_target(
 
 
 def _load_surface_zone() -> dict:
-    """Load the default surface zone.  Returns a stub if config not found."""
-    try:
-        from config.place_zone_io import get_place_zone
-        zone = get_place_zone(_PLACE.PLACE_ZONE_NAME, _PLACE.PLACE_ZONE_CONFIG_PATH)
-        return {
-            "name": zone["name"],
-            "center_xy_mm": list(zone["center_xy_mm"]),
-            "surface_z_mm": float(zone.get("floor_z_mm", zone.get("place_z_mm", 0.0))),
-            "default_phi_deg": float(zone.get("phi_deg", 0.0)),
-            "width_mm": float(zone.get("width_mm", 290.0)),
-            "depth_mm": float(zone.get("depth_mm", 175.0)),
-        }
-    except Exception as exc:
-        print(f"[ZONE] failed to load zone ({exc}); using default stub")
-        return {
-            "name": _PLACE.PLACE_ZONE_NAME,
-            "center_xy_mm": [190.0, 270.0],
-            "surface_z_mm": 0.0,
-            "default_phi_deg": 0.0,
-            "width_mm": 290.0,
-            "depth_mm": 175.0,
-        }
+    return dict(load_place_scene(_PLACE, verbose=False))
 
 
 # ── Main dry-run loop ──────────────────────────────────────────────────────
@@ -483,8 +475,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"RAFT checkpoint: {_SURVEY.RAFT_CHECKPOINT_PATH}")
     print(f"bundle         : {_SURVEY.BUNDLE_PATH}")
     print(f"stereo calib   : {_SURVEY.STEREO_CALIBRATION_PATH}")
-    print(f"place zone     : {_PLACE.PLACE_ZONE_NAME}")
-    print(f"packing        : adjacent_dir={_PLACE.ADJACENT_DIRECTION} pad_xyz=({_PLACE.PAD_X_MM},{_PLACE.PAD_Y_MM},{_PLACE.PAD_Z_MM})")
+    print(f"place scene    : {_PLACE.PLACE_SCENE_NAME}")
+    print(f"runtime        : context={_RUNTIME_CONTEXT.name} workspace_profile={_WORKSPACE.name}")
+    print(f"packing        : planner={_PLACE.PLACE_PLANNING_SEQUENCE_NAME} pad_xyz=({_PLACE.PAD_X_MM},{_PLACE.PAD_Y_MM},{_PLACE.PAD_Z_MM})")
     print()
 
     # ── Configure modules ────────────────────────────────────────────────

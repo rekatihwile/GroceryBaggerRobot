@@ -11,13 +11,21 @@ existing autonomous scripts are intentionally left untouched.
 # ============================================================
 
 from pathlib import Path
+import os
 import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from motion.z_safety_config import (  # noqa: E402
+from config.gripper.gripper_geometry_config import (  # noqa: E402
+    DEFAULT_GRIPPER_GEOMETRY,
+    opening_length_mm_for_servo_deg,
+)
+from config.runtime_context import resolve_runtime_context, resolve_workspace_profile_name  # noqa: E402
+from config.workspace.workspace_config import get_workspace_filter_config, workspace_bounds_mm  # noqa: E402
+from config.place.place_config import DEFAULT_PLACE  # noqa: E402
+from config.motion.z_safety_config import (  # noqa: E402
     DEFAULT_Z_SAFETY,
     PLACE_RELEASE_GAP_MM as SHARED_PLACE_RELEASE_GAP_MM,
     print_z_safety_settings,
@@ -40,25 +48,57 @@ NO_CANDIDATE_RECOVERY_MOVE_ENABLED = True
 # Placement geometry and packing fit.
 # Lower PAD_X_MM / PAD_Y_MM / PAD_Z_MM to make packing tighter across all objects.
 # Increase them if you want more conservative spacing between packed AABBs.
-PAD_X_MM = 0
-PAD_Y_MM = 0
-PAD_Z_MM = 20.0
-ADJACENT_DIRECTION = "left"
+PAD_X_MM = float(DEFAULT_PLACE.PAD_X_MM)
+PAD_Y_MM = float(DEFAULT_PLACE.PAD_Y_MM)
+PAD_Z_MM = float(DEFAULT_PLACE.PAD_Z_MM)
+PLACE_PLANNING_SEQUENCE_NAME = str(
+    os.environ.get(
+        "GB_PLACE_PLANNING_SEQUENCE",
+        getattr(DEFAULT_PLACE, "PLACE_PLANNING_SEQUENCE_NAME", "bag_local_aabb_joint"),
+    )
+).strip().lower()
+PLACE_BAG_LOCAL_HEIGHT_MM = float(getattr(DEFAULT_PLACE, "PLACE_BAG_LOCAL_HEIGHT_MM", 250.0))
+RUN_LOG_PATH = Path("autonomous_missed_pick_recovery_last_run.txt")
+
+# ── Platform task-space obstacle avoidance ────────────────────────────────────
+# Before each pick the script checks how close the target XY is to every other
+# candidate on the platform.  If another item is within the SKIP threshold the
+# candidate is dropped (gripper would definitely collide on descent).  If within
+# the WARN threshold it proceeds but prints a warning.
+PLATFORM_OBSTACLE_AVOIDANCE_ENABLED: bool = True
+PLATFORM_OBSTACLE_SKIP_MM: float = 22.0   # gripper half-width; collide on descent
+PLATFORM_OBSTACLE_WARN_MM: float = 50.0   # close enough to note
+
+# ── No-candidate recovery: move arm before retry survey ───────────────────────
+# When the first survey finds no valid pick candidates, move the arm to the
+# survey pose before retrying.  This clears the arm out of the camera view so
+# it cannot occlude the platform during re-survey.
+SURVEY_CLEAR_ON_NO_CANDIDATE: bool = True
+
+# ── Run snapshot / post-processing save ──────────────────────────────────────
+# Each run saves stereo pairs, overhead frames, disparity, and a manifest JSON
+# under data/run_snapshots/run_<timestamp>/.  The stereo pairs are named
+# Stereo_Left_NNNN.png / Stereo_Right_NNNN.png so autonomous_system_wrapper.py
+# can be pointed at the directory with --images.
+SAVE_RUN_SNAPSHOT = True
+RUN_SNAPSHOT_BASE_DIR: Path = REPO_ROOT / "data" / "run_snapshots"
+_RUNTIME_CONTEXT = resolve_runtime_context("wet_run")
+_WORKSPACE = get_workspace_filter_config(resolve_workspace_profile_name(_RUNTIME_CONTEXT.workspace_profile_name))
 # Efficient packing chooses the best object for the next slot by fit first, then volume.
-EFFICIENT_PACKING_ENABLED = True
-EFFICIENT_PACKING_REQUIRE_SLOT_FIT = True
+EFFICIENT_PACKING_ENABLED = bool(DEFAULT_PLACE.EFFICIENT_PACKING_ENABLED)
+EFFICIENT_PACKING_REQUIRE_SLOT_FIT = bool(DEFAULT_PLACE.EFFICIENT_PACKING_REQUIRE_SLOT_FIT)
 # Small XY nudges are tried only when they improve slot fit.
-PLACE_XY_NUDGE_ENABLED = True
-PLACE_XY_NUDGE_STEP_MM = 5.0
-PLACE_XY_NUDGE_MAX_MM = 20.0
+PLACE_XY_NUDGE_ENABLED = bool(DEFAULT_PLACE.PLACE_XY_NUDGE_ENABLED)
+PLACE_XY_NUDGE_STEP_MM = float(DEFAULT_PLACE.PLACE_XY_NUDGE_STEP_MM)
+PLACE_XY_NUDGE_MAX_MM = float(DEFAULT_PLACE.PLACE_XY_NUDGE_MAX_MM)
 # The gripper footprint check still enforces bag containment.
-PLACE_REQUIRE_GRIPPER_FOOTPRINT_INSIDE_BAG = True
-PLACE_GRIPPER_FOOTPRINT_WIDTH_MM = 60.0
-PLACE_GRIPPER_FOOTPRINT_LENGTH_L_MM = 70.0
-PLACE_GRIPPER_FOOTPRINT_EXTRA_MARGIN_MM = 1.0
-PLACE_GRIPPER_FOOTPRINT_DEFAULT_SERVO_DEG = 55.0
-PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE = True
-PLACE_ROTATION_CANDIDATE_OFFSETS_DEG = [0.0, 90.0]
+PLACE_REQUIRE_GRIPPER_FOOTPRINT_INSIDE_BAG = bool(DEFAULT_PLACE.PLACE_REQUIRE_GRIPPER_FOOTPRINT_INSIDE_BAG)
+PLACE_GRIPPER_FOOTPRINT_WIDTH_MM = float(DEFAULT_GRIPPER_GEOMETRY.FIXED_GRIPPER_WIDTH_MM)
+PLACE_GRIPPER_FOOTPRINT_LENGTH_L_MM = float(DEFAULT_GRIPPER_GEOMETRY.PIVOT_TO_TIP_LENGTH_MM)
+PLACE_GRIPPER_FOOTPRINT_EXTRA_MARGIN_MM = float(DEFAULT_PLACE.PLACE_GRIPPER_FOOTPRINT_EXTRA_MARGIN_MM)
+PLACE_GRIPPER_FOOTPRINT_DEFAULT_SERVO_DEG = float(DEFAULT_PLACE.PLACE_GRIPPER_FOOTPRINT_DEFAULT_SERVO_DEG)
+PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE = bool(DEFAULT_PLACE.PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE)
+PLACE_ROTATION_CANDIDATE_OFFSETS_DEG = [float(v) for v in DEFAULT_PLACE.PLACE_ROTATION_CANDIDATE_OFFSETS_DEG]
 
 # Autonomous survey timing. The next survey is submitted right before the place
 # descent move, so capture begins while the robot is lowering to release.
@@ -76,9 +116,9 @@ OVERHEAD_FRESH_READ_DELAY_S = 0.02
 
 # Platform footprint.  Keep this aligned with
 # calibration/calibrate_all_safe_grid_xyz_models.py SCAN_PRESETS["staging_refined"].
-PLATFORM_GRID_X_MM = list(range(40, 380, 100))
-PLATFORM_GRID_Y_MM = list(range(40, 515, 150))
-PLATFORM_GRID_Z_MM = [0, 50, 150, 200]
+PLATFORM_GRID_X_MM = [float(v) for v in _WORKSPACE.platform_grid_x_mm]
+PLATFORM_GRID_Y_MM = [float(v) for v in _WORKSPACE.platform_grid_y_mm]
+PLATFORM_GRID_Z_MM = [float(v) for v in _WORKSPACE.platform_grid_z_mm]
 PLATFORM_X_MIN_MM = float(min(PLATFORM_GRID_X_MM))
 PLATFORM_X_MAX_MM = float(max(PLATFORM_GRID_X_MM))
 PLATFORM_Y_MIN_MM = float(min(PLATFORM_GRID_Y_MM))
@@ -130,14 +170,14 @@ RETRY_RELOCALIZE_WITH_RAFT_ONLY_AFTER_MISS = True
 ON_RETRY_FAIL = "stop"  # "stop" or "skip"
 
 # Best-candidate filters. These are intentionally conservative and easy to tune.
-BEST_REQUIRE_POSITIVE_PLATFORM_XY = True
+BEST_REQUIRE_POSITIVE_PLATFORM_XY = bool(_WORKSPACE.require_positive_platform_xy)
 BEST_PLATFORM_MIN_X_MM = PLATFORM_X_MIN_MM
 BEST_PLATFORM_MIN_Y_MM = PLATFORM_Y_MIN_MM
-BEST_WORKSPACE_X_MIN_MM = PLATFORM_X_MIN_MM
-BEST_WORKSPACE_X_MAX_MM = PLATFORM_X_MAX_MM
-BEST_WORKSPACE_Y_MIN_MM = PLATFORM_Y_MIN_MM
-BEST_WORKSPACE_Y_MAX_MM = PLATFORM_Y_MAX_MM
-BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS = True
+BEST_WORKSPACE_X_MIN_MM = PLATFORM_X_MIN_MM if _WORKSPACE.enable_workspace_bounds else None
+BEST_WORKSPACE_X_MAX_MM = PLATFORM_X_MAX_MM if _WORKSPACE.enable_workspace_bounds else None
+BEST_WORKSPACE_Y_MIN_MM = PLATFORM_Y_MIN_MM if _WORKSPACE.enable_workspace_bounds else None
+BEST_WORKSPACE_Y_MAX_MM = PLATFORM_Y_MAX_MM if _WORKSPACE.enable_workspace_bounds else None
+BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS = bool(_WORKSPACE.enable_robotframe_centroid_xy_platform_bounds)
 BEST_ROBOTFRAME_CENTROID_X_MIN_MM = PLATFORM_X_MIN_MM
 BEST_ROBOTFRAME_CENTROID_X_MAX_MM = PLATFORM_X_MAX_MM
 BEST_ROBOTFRAME_CENTROID_Y_MIN_MM = PLATFORM_Y_MIN_MM
@@ -148,44 +188,45 @@ BEST_USE_ROBOT_REACH_CHECK = True
 BEST_ROBOT_REACH_MARGIN_MM = 2.0
 BEST_REQUIRE_SOFT_POSE_SAFE = True
 BEST_SOFT_POSE_CHECK_Z_MM = 275.0
-BEST_CENTER_GATE_ENABLED = False
-BEST_MAX_IMAGE_CENTER_NORM_RADIUS = 0.85
-BEST_CLUSTER_GATE_ENABLED = False
-BEST_MAX_CLUSTER_DISTANCE_MM = 600.0
-BEST_REJECT_PLACED_OVERLAP = True
-BEST_PLACED_OVERLAP_MARGIN_MM = 25.0
-BEST_MIN_VOLUME_MM3 = 1.0
-BEST_MAX_VOLUME_CM3 = 3000.0
+BEST_CENTER_GATE_ENABLED = bool(_WORKSPACE.center_gate_enabled)
+BEST_MAX_IMAGE_CENTER_NORM_RADIUS = float(_WORKSPACE.max_image_center_norm_radius)
+BEST_CLUSTER_GATE_ENABLED = bool(_WORKSPACE.cluster_gate_enabled)
+BEST_MAX_CLUSTER_DISTANCE_MM = float(_WORKSPACE.max_cluster_distance_mm)
+BEST_REJECT_PLACED_OVERLAP = bool(_WORKSPACE.reject_placed_overlap)
+BEST_PLACED_OVERLAP_MARGIN_MM = float(_WORKSPACE.placed_overlap_margin_mm)
+BEST_MIN_VOLUME_MM3 = float(_WORKSPACE.min_volume_mm3)
+BEST_MAX_VOLUME_CM3 = float(_WORKSPACE.max_volume_cm3)
 
 # IMPORTANT:
 # This flag may disable optional dynamic correction, but it must not bypass the
 # shared minimum height, safety padding, or minimum Z clamp.
-USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT = False
-PLACE_RELEASE_GAP_MM = SHARED_PLACE_RELEASE_GAP_MM
-PLACE_Z_UNCERTAINTY_GAIN = 0.1
-PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = 3.0
-PLACE_Z_POLICY_MODE = "negative_bin_hang"  # "shared", "negative_bin_hang", or "negative_bin_simple"
-PLACE_NEGATIVE_BIN_PLATFORM_Z_MM = -200.0
-PLACE_NEGATIVE_BIN_MIN_RELEASE_Z_MM = 0.0
-PLACE_NEGATIVE_BIN_USE_EXISTING_STACK = True
-PLACE_NEGATIVE_BIN_HANG_WEIGHT = 0.70
-PLACE_NEGATIVE_BIN_SIMPLE_WEIGHT = 0.30
-PLACE_NEGATIVE_BIN_CLEARANCE_MM = 0.0
-PLACE_NEGATIVE_BIN_INCLUDE_RELEASE_GAP_PADDING = False
-USE_DYNAMIC_RELEASE_FOR_PLACE = False
-DYNAMIC_RELEASE_TIMEOUT_S = 45.0
+USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT = bool(DEFAULT_PLACE.USE_DYNAMIC_PLACE_Z_FROM_OBJECT_HEIGHT)
+PLACE_RELEASE_GAP_MM = float(DEFAULT_PLACE.PLACE_RELEASE_GAP_MM if DEFAULT_PLACE.PLACE_RELEASE_GAP_MM is not None else SHARED_PLACE_RELEASE_GAP_MM)
+PLACE_Z_UNCERTAINTY_GAIN = float(DEFAULT_PLACE.PLACE_Z_UNCERTAINTY_GAIN)
+PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM = float(DEFAULT_PLACE.PLACE_Z_UNCERTAINTY_CLEARANCE_MAX_MM)
+PLACE_Z_POLICY_MODE = str(DEFAULT_PLACE.PLACE_Z_POLICY_MODE)  # "shared", "negative_bin_hang", or "negative_bin_simple"
+PLACE_NEGATIVE_BIN_PLATFORM_Z_MM = float(DEFAULT_PLACE.PLACE_NEGATIVE_BIN_PLATFORM_Z_MM)
+PLACE_NEGATIVE_BIN_MIN_RELEASE_Z_MM = float(DEFAULT_PLACE.PLACE_NEGATIVE_BIN_MIN_RELEASE_Z_MM)
+PLACE_NEGATIVE_BIN_USE_EXISTING_STACK = bool(DEFAULT_PLACE.PLACE_NEGATIVE_BIN_USE_EXISTING_STACK)
+PLACE_NEGATIVE_BIN_HANG_WEIGHT = float(DEFAULT_PLACE.PLACE_NEGATIVE_BIN_HANG_WEIGHT)
+PLACE_NEGATIVE_BIN_SIMPLE_WEIGHT = float(DEFAULT_PLACE.PLACE_NEGATIVE_BIN_SIMPLE_WEIGHT)
+PLACE_NEGATIVE_BIN_CLEARANCE_MM = float(DEFAULT_PLACE.PLACE_NEGATIVE_BIN_CLEARANCE_MM)
+PLACE_NEGATIVE_BIN_INCLUDE_RELEASE_GAP_PADDING = bool(DEFAULT_PLACE.PLACE_NEGATIVE_BIN_INCLUDE_RELEASE_GAP_PADDING)
+USE_DYNAMIC_RELEASE_FOR_PLACE = bool(DEFAULT_PLACE.USE_DYNAMIC_RELEASE_FOR_PLACE)
+DYNAMIC_RELEASE_TIMEOUT_S = float(DEFAULT_PLACE.DYNAMIC_RELEASE_TIMEOUT_S)
 
 # Placement should only crack the claw open so it does not hit the object already placed.
-PLACE_CLAW_OPEN_DEG = 45
-COARSE_MOVE_TIME_S = 1.10
-XY_MOVE_TIME_S = 1.50
-PLACE_Z_MOVE_TIME_S = 0.60
+PLACE_CLAW_OPEN_DEG = int(DEFAULT_PLACE.PLACE_CLAW_OPEN_DEG)
+COARSE_MOVE_TIME_S = float(DEFAULT_PLACE.COARSE_MOVE_TIME_S)
+XY_MOVE_TIME_S = float(DEFAULT_PLACE.XY_MOVE_TIME_S)
+PLACE_Z_MOVE_TIME_S = float(DEFAULT_PLACE.PLACE_Z_MOVE_TIME_S)
 
 WINDOW = "Autonomous Pick Place - Largest Volume"
 
 # ============================================================
 
 import copy
+import threading as _threading
 import io
 from contextlib import redirect_stdout
 from dataclasses import dataclass
@@ -206,8 +247,15 @@ from motion.pick_place_sequence import (
     _command_servo_angle as _sequence_command_servo_angle,
     _move_checked as _sequence_move_checked,
 )
+from planning.autonomous_planning_sequences import (
+    PlanningSequenceContext,
+    PlanningRuntime,
+    compute_candidate_place_target as compute_sequence_place_target,
+    list_planning_sequences,
+    select_candidate_for_state as select_candidate_for_sequence,
+    validate_planning_sequence_name,
+)
 from planning.aabb_utils import aabb_from_object_candidate, make_aabb_from_center_size, pad_aabb
-from planning.adjacent_placement import compute_adjacent_placement
 import scripts.pick_one_place_one as _pick_one_mod
 from scripts.autonomous_best_candidate import (
     BestCandidateConfig,
@@ -230,7 +278,7 @@ from scripts.pick_one_place_one import (
     _configure_modules,
     _confirm,
     get_use_z_ground_model_for_pick_surface,
-    _load_place_surface_zone,
+    _load_place_scene,
     execute_pick_selected,
 )
 from scripts.pick_validation_display import _hr, make_display, put_text_outline
@@ -252,11 +300,171 @@ from test_calibration_bundle_live_stereo_z_pickplace import (
 )
 
 
+# Module-level event so GoToSurveyRequest can be signalled from anywhere
+# (including inside motion sequences and background threads).
+_GO_TO_SURVEY_EVENT: _threading.Event = _threading.Event()
+
+
 class UserAbort(RuntimeError):
     pass
 
 
+# ── Run snapshot helpers ──────────────────────────────────────────────────────
+
+@dataclass
+class _ObjectSnapshot:
+    object_i: int
+    class_name: str
+    pick_xy_mm: list[float]
+    pick_z_mm: float
+    pick_grasp_z_mm: float
+    pick_phi_deg: float
+    place_xy_mm: list[float] | None
+    place_phi_deg: float | None
+    destination_surface_z_mm: float | None
+    place_result: str  # "placed", "miss", "failed", "pending"
+    raw_box_center_xyz_mm: list[float] | None
+    raw_box_size_xyz_mm: list[float] | None
+    padded_box_center_xyz_mm: list[float] | None
+    padded_box_size_xyz_mm: list[float] | None
+    detection_class: str
+    detection_confidence: float
+    detection_bbox_xyxy: list[float] | None
+    stereo_left_path: str | None = None
+    stereo_right_path: str | None = None
+    overhead_path: str | None = None
+    disparity_path: str | None = None
+    points_cam_path: str | None = None
+    left_overlay_path: str | None = None
+
+
+def _save_object_snapshot(
+    snap: _ObjectSnapshot,
+    run_dir: Path,
+    *,
+    survey_state,
+    cand_dbg,
+    overhead_frame,
+) -> None:
+    """Write per-object image files to run_dir and fill in snap path fields."""
+    if not SAVE_RUN_SNAPSHOT:
+        return
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        n = snap.object_i
+        prefix = f"{n:04d}"
+
+        # Stereo left/right from the best burst frame — named so the wrapper
+        # can find them with --images <run_dir>.
+        bf = None
+        if survey_state is not None and getattr(survey_state, "burst_frames", None):
+            best_i = int(getattr(cand_dbg, "best_frame_i", 0)) if cand_dbg is not None else 0
+            best_i = min(best_i, len(survey_state.burst_frames) - 1)
+            bf = survey_state.burst_frames[best_i]
+
+        if bf is not None:
+            left_path = run_dir / f"Stereo_Left_{prefix}.png"
+            right_path = run_dir / f"Stereo_Right_{prefix}.png"
+            cv2.imwrite(str(left_path), bf.left_rect)
+            cv2.imwrite(str(right_path), bf.right_rect)
+            snap.stereo_left_path = left_path.name
+            snap.stereo_right_path = right_path.name
+
+        if overhead_frame is not None:
+            oh_path = run_dir / f"Overhead_{prefix}.png"
+            cv2.imwrite(str(oh_path), overhead_frame)
+            snap.overhead_path = oh_path.name
+
+        if cand_dbg is not None:
+            disp = getattr(cand_dbg, "disparity", None)
+            if disp is not None:
+                disp_path = run_dir / f"disparity_{prefix}.npz"
+                np.savez_compressed(str(disp_path), disparity=np.asarray(disp, dtype=np.float32))
+                snap.disparity_path = disp_path.name
+
+            pts = getattr(cand_dbg, "points_cam", None)
+            if pts is not None and len(pts) > 0:
+                pts_path = run_dir / f"points_cam_{prefix}.npz"
+                np.savez_compressed(str(pts_path), points_cam=np.asarray(pts, dtype=np.float32))
+                snap.points_cam_path = pts_path.name
+
+            overlay = getattr(cand_dbg, "left_overlay", None)
+            if overlay is not None:
+                ov_path = run_dir / f"left_overlay_{prefix}.png"
+                cv2.imwrite(str(ov_path), overlay)
+                snap.left_overlay_path = ov_path.name
+
+    except Exception as exc:
+        print(f"[SNAPSHOT WARN] object {snap.object_i} save failed: {exc}")
+
+
+def _write_run_manifest(run_dir: Path, snapshots: list[_ObjectSnapshot], *, placed_boxes: list, run_ts: str) -> None:
+    if not SAVE_RUN_SNAPSHOT or not snapshots:
+        return
+    try:
+        import json as _json
+
+        def _box_dict(box) -> dict | None:
+            if box is None:
+                return None
+            try:
+                return {
+                    "center_xyz_mm": [float(v) for v in box.raw_box.center_xyz_mm],
+                    "size_xyz_mm": [float(v) for v in box.raw_box.size_xyz_mm],
+                    "label": str(box.raw_box.label),
+                }
+            except Exception:
+                return None
+
+        manifest = {
+            "run_timestamp": run_ts,
+            "script": "autonomous_missed_pick_recovery.py",
+            "place_planning_sequence": str(PLACE_PLANNING_SEQUENCE_NAME),
+            "objects": [
+                {
+                    "object_i": s.object_i,
+                    "class_name": s.class_name,
+                    "pick_xy_mm": s.pick_xy_mm,
+                    "pick_z_mm": s.pick_z_mm,
+                    "pick_grasp_z_mm": s.pick_grasp_z_mm,
+                    "pick_phi_deg": s.pick_phi_deg,
+                    "place_xy_mm": s.place_xy_mm,
+                    "place_phi_deg": s.place_phi_deg,
+                    "destination_surface_z_mm": s.destination_surface_z_mm,
+                    "place_result": s.place_result,
+                    "raw_box_center_xyz_mm": s.raw_box_center_xyz_mm,
+                    "raw_box_size_xyz_mm": s.raw_box_size_xyz_mm,
+                    "padded_box_center_xyz_mm": s.padded_box_center_xyz_mm,
+                    "padded_box_size_xyz_mm": s.padded_box_size_xyz_mm,
+                    "detection_class": s.detection_class,
+                    "detection_confidence": s.detection_confidence,
+                    "detection_bbox_xyxy": s.detection_bbox_xyxy,
+                    "stereo_left": s.stereo_left_path,
+                    "stereo_right": s.stereo_right_path,
+                    "overhead": s.overhead_path,
+                    "disparity": s.disparity_path,
+                    "points_cam": s.points_cam_path,
+                    "left_overlay": s.left_overlay_path,
+                }
+                for s in snapshots
+            ],
+            "placed_boxes": [_box_dict(b) for b in placed_boxes],
+        }
+
+        mpath = run_dir / "manifest.json"
+        with mpath.open("w", encoding="utf-8") as fh:
+            _json.dump(manifest, fh, indent=2)
+        print(f"[SNAPSHOT] manifest written → {mpath}")
+    except Exception as exc:
+        print(f"[SNAPSHOT WARN] manifest write failed: {exc}")
+
+
 class ClearBoxRequest(RuntimeError):
+    pass
+
+
+class GoToSurveyRequest(RuntimeError):
+    """User pressed G: lift, move to survey pose, rehome J3."""
     pass
 
 
@@ -289,6 +497,10 @@ class MissMatchResult:
     area_ratio: float | None
     same_class: bool
     reason: str
+    # Last overhead frame captured during the miss-check burst.  When no miss is
+    # confirmed this is passed to the next survey so the overhead re-capture can
+    # be skipped (the scene on the platform hasn't changed since we hovered).
+    last_overhead_frame: np.ndarray | None = None
 
 
 @dataclass
@@ -333,22 +545,99 @@ class OptimizedPlaceTarget:
     nudge_xy_mm: np.ndarray
     can_place: bool
     reason: str
+    planner_layer_z_mm: float | None = None
+    support_box_index: int | None = None
+    support_top_z_mm: float | None = None
+
+
+def _planning_runtime() -> PlanningRuntime:
+    return PlanningRuntime(
+        choose_best_candidate=choose_best_candidate,
+        aabb_from_object_candidate=_aabb_from_object_candidate_quiet,
+    )
+
+
+def _planning_sequence_context(
+    *,
+    object_i: int,
+    robot,
+    placed_boxes: list,
+    config: BestCandidateConfig,
+    surface_zone: dict,
+    base_xy: np.ndarray,
+    base_phi_deg: float,
+    target_limit: int,
+) -> PlanningSequenceContext:
+    return PlanningSequenceContext(
+        object_i=int(object_i),
+        robot=robot,
+        placed_boxes=list(placed_boxes),
+        config=config,
+        surface_zone=surface_zone,
+        base_xy=np.asarray(base_xy, dtype=np.float64).reshape(2).copy(),
+        base_phi_deg=float(base_phi_deg),
+        target_limit=int(target_limit),
+        pad_xyz_mm=np.array([float(PAD_X_MM), float(PAD_Y_MM), float(PAD_Z_MM)], dtype=np.float64),
+        bag_height_mm=float(PLACE_BAG_LOCAL_HEIGHT_MM),
+    )
+
+
+def _sequence_target_to_optimized_target(target: Any) -> OptimizedPlaceTarget:
+    return OptimizedPlaceTarget(
+        target_xy_mm=np.asarray(target.target_xy_mm, dtype=np.float64).reshape(2).copy(),
+        target_phi_deg=float(target.target_phi_deg),
+        footprint_clearance_mm=float(target.footprint_clearance_mm),
+        aabb_clearance_mm=float(target.aabb_clearance_mm),
+        fit_clearance_mm=float(target.fit_clearance_mm),
+        nudge_xy_mm=np.asarray(target.nudge_xy_mm, dtype=np.float64).reshape(2).copy(),
+        can_place=bool(target.can_place),
+        reason=str(target.reason),
+        planner_layer_z_mm=None if getattr(target, "planner_layer_z_mm", None) is None else float(target.planner_layer_z_mm),
+    )
+
+
+class _TeeText:
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, text: str) -> int:
+        for stream in self.streams:
+            stream.write(text)
+            stream.flush()
+        return len(text)
+
+    def flush(self) -> None:
+        for stream in self.streams:
+            stream.flush()
+
+
+def _install_one_run_log() -> object:
+    try:
+        RUN_LOG_PATH.unlink(missing_ok=True)
+    except Exception:
+        pass
+    fh = RUN_LOG_PATH.open("w", encoding="utf-8", errors="replace")
+    sys.stdout = _TeeText(sys.__stdout__, fh)
+    sys.stderr = _TeeText(sys.__stderr__, fh)
+    print(f"[RUN LOG] writing this run to {RUN_LOG_PATH.resolve()}")
+    print("[RUN LOG] previous log was deleted/overwritten at startup.")
+    return fh
 
 
 def _best_candidate_config() -> BestCandidateConfig:
     return BestCandidateConfig(
         require_positive_platform_xy=BEST_REQUIRE_POSITIVE_PLATFORM_XY,
-        platform_min_x_mm=BEST_PLATFORM_MIN_X_MM,
-        platform_min_y_mm=BEST_PLATFORM_MIN_Y_MM,
+        platform_min_x_mm=BEST_PLATFORM_MIN_X_MM if BEST_REQUIRE_POSITIVE_PLATFORM_XY else None,
+        platform_min_y_mm=BEST_PLATFORM_MIN_Y_MM if BEST_REQUIRE_POSITIVE_PLATFORM_XY else None,
         workspace_x_min_mm=BEST_WORKSPACE_X_MIN_MM,
         workspace_x_max_mm=BEST_WORKSPACE_X_MAX_MM,
         workspace_y_min_mm=BEST_WORKSPACE_Y_MIN_MM,
         workspace_y_max_mm=BEST_WORKSPACE_Y_MAX_MM,
         require_robotframe_centroid_xy_in_platform_bounds=BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS,
-        robotframe_centroid_x_min_mm=BEST_ROBOTFRAME_CENTROID_X_MIN_MM,
-        robotframe_centroid_x_max_mm=BEST_ROBOTFRAME_CENTROID_X_MAX_MM,
-        robotframe_centroid_y_min_mm=BEST_ROBOTFRAME_CENTROID_Y_MIN_MM,
-        robotframe_centroid_y_max_mm=BEST_ROBOTFRAME_CENTROID_Y_MAX_MM,
+        robotframe_centroid_x_min_mm=BEST_ROBOTFRAME_CENTROID_X_MIN_MM if BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS else None,
+        robotframe_centroid_x_max_mm=BEST_ROBOTFRAME_CENTROID_X_MAX_MM if BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS else None,
+        robotframe_centroid_y_min_mm=BEST_ROBOTFRAME_CENTROID_Y_MIN_MM if BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS else None,
+        robotframe_centroid_y_max_mm=BEST_ROBOTFRAME_CENTROID_Y_MAX_MM if BEST_REQUIRE_ROBOTFRAME_CENTROID_XY_IN_PLATFORM_BOUNDS else None,
         require_min_robotframe_centroid_z=BEST_REQUIRE_MIN_ROBOTFRAME_CENTROID_Z,
         min_robotframe_centroid_z_mm=BEST_MIN_ROBOTFRAME_CENTROID_Z_MM,
         use_robot_reach_check=BEST_USE_ROBOT_REACH_CHECK,
@@ -449,6 +738,48 @@ def _aabb_from_object_candidate_quiet(candidate, default_label: str):
     # aabb_from_object_candidate prints verbose diagnostics; suppress in tight loops.
     with io.StringIO() as _sink, redirect_stdout(_sink):
         return aabb_from_object_candidate(candidate, default_label=default_label)
+
+
+def _check_pick_for_platform_obstacles(
+    target_dbg: CandidateDebug,
+    survey_state: SurveyState | None,
+) -> tuple[bool, list[str]]:
+    """Return (ok_to_pick, warnings).
+
+    ok_to_pick=False when another detected item is so close to the target XY
+    that the gripper would almost certainly collide on descent.  Warns (but still
+    allows) for items within PLATFORM_OBSTACLE_WARN_MM.
+    """
+    if not PLATFORM_OBSTACLE_AVOIDANCE_ENABLED:
+        return True, []
+    if survey_state is None or not survey_state.candidates:
+        return True, []
+
+    target_xy = _candidate_target_xy(target_dbg)
+    if not np.all(np.isfinite(target_xy)):
+        return True, []
+
+    warnings: list[str] = []
+    collide = False
+    for other in survey_state.candidates:
+        if other is target_dbg:
+            continue
+        other_xy = _candidate_target_xy(other)
+        if not np.all(np.isfinite(other_xy)):
+            continue
+        dist = float(np.linalg.norm(target_xy - other_xy))
+        name = _candidate_class_name(other)
+        if dist < float(PLATFORM_OBSTACLE_SKIP_MM):
+            warnings.append(
+                f"[OBSTACLE] SKIP: {name} centre {dist:.0f} mm from pick target "
+                f"— gripper would collide on descent"
+            )
+            collide = True
+        elif dist < float(PLATFORM_OBSTACLE_WARN_MM):
+            warnings.append(
+                f"[OBSTACLE] WARN: {name} centre {dist:.0f} mm from pick target"
+            )
+    return not collide, warnings
 
 
 def _bbox_area_px(bbox_xyxy: tuple[float, float, float, float] | None) -> float | None:
@@ -916,6 +1247,7 @@ def _prepare_place_at_target(
         check_pose_safe_fn=checker,
     ):
         return None
+    _raise_if_go_to_survey()
     if not _sequence_move_checked(
         robot,
         "[PLACE AUTO] XY+phi hover",
@@ -927,6 +1259,7 @@ def _prepare_place_at_target(
         check_pose_safe_fn=checker,
     ):
         return None
+    _raise_if_go_to_survey()
 
     print("[PLACE AUTO] at place XY hover; release descent is pending.")
     return PreparedPlaceMove(
@@ -964,6 +1297,7 @@ def _finish_place_from_hover(
         except Exception as exc:
             print(f"[PLACE AUTO] WARN: place-descent callback failed: {exc}")
 
+    _raise_if_go_to_survey()
     print("[PLACE AUTO] WARNING: descending to release height now.")
     if not _sequence_move_checked(
         robot,
@@ -1013,6 +1347,7 @@ def _finish_place_from_hover(
         move_time_s=settings.coarse_move_time_s,
     ):
         return False
+    _raise_if_go_to_survey()
 
     print("[PLACE AUTO] OK - item released and robot retracted.")
     return True
@@ -1035,8 +1370,7 @@ def _held_initial_servo_deg(held_object: CandidateDebug | None) -> float:
 
 
 def _gripper_footprint_size_mm(servo_deg: float) -> tuple[float, float]:
-    angle_rad = np.deg2rad(float(np.clip(servo_deg, 0.0, 180.0)))
-    length = abs(float(PLACE_GRIPPER_FOOTPRINT_LENGTH_L_MM) * float(np.sin(angle_rad)))
+    length = float(opening_length_mm_for_servo_deg(float(servo_deg), DEFAULT_GRIPPER_GEOMETRY))
     length += 2.0 * float(PLACE_GRIPPER_FOOTPRINT_EXTRA_MARGIN_MM)
     width = float(PLACE_GRIPPER_FOOTPRINT_WIDTH_MM) + 2.0 * float(PLACE_GRIPPER_FOOTPRINT_EXTRA_MARGIN_MM)
     return max(1.0, length), max(1.0, width)
@@ -1426,6 +1760,84 @@ def _validate_gripper_footprint_inside_bag(
     if not inside:
         print("[PLACE FOOTPRINT CHECK] ABORT: gripper footprint would leave the bag rectangle.")
     return inside
+
+
+_DESPERATE_OVERFLOW_MM: float = 15.0
+
+
+def _stack_fallback_on_existing_box(
+    held_object: CandidateDebug,
+    *,
+    placed_boxes: list,
+    surface_zone: dict,
+    base_phi_deg: float,
+    label: str,
+    desperate_overflow_mm: float = 0.0,
+) -> OptimizedPlaceTarget | None:
+    if not placed_boxes:
+        return None
+
+    try:
+        candidate_box = _aabb_from_object_candidate_quiet(held_object.candidate, default_label=f"{label}_stack_fit")
+        candidate_size_xy = np.asarray(candidate_box.size_xyz_mm, dtype=np.float64).reshape(3)[:2]
+    except Exception:
+        candidate_size_xy = np.array(_gripper_footprint_size_mm(_held_initial_servo_deg(held_object)), dtype=np.float64)
+
+    servo_deg = _held_initial_servo_deg(held_object)
+    footprint_length_mm, footprint_width_mm = _gripper_footprint_size_mm(servo_deg)
+    offsets = [float(v) for v in PLACE_ROTATION_CANDIDATE_OFFSETS_DEG] if PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE else [0.0]
+
+    best: tuple[float, float, int, OptimizedPlaceTarget] | None = None
+    for support_i in reversed(range(len(placed_boxes))):
+        support = placed_boxes[support_i]
+        support_xy = np.asarray(support.raw_box.center_xyz_mm[:2], dtype=np.float64).reshape(2)
+        support_top_z = float(support.raw_box.max_xyz_mm[2])
+        for offset in offsets:
+            phi = _normalize_phi_deg(float(base_phi_deg) + offset)
+            footprint_clearance_mm, _corners, _min_xy, _max_xy = _footprint_signed_edge_clearance_mm(
+                support_xy,
+                phi,
+                footprint_length_mm,
+                footprint_width_mm,
+                surface_zone=surface_zone,
+            )
+            aabb_clearance_mm = _aabb_signed_edge_clearance_mm(
+                support_xy,
+                candidate_size_xy,
+                surface_zone=surface_zone,
+            )
+            fit_clearance_mm = min(float(footprint_clearance_mm), float(aabb_clearance_mm))
+            if fit_clearance_mm < -desperate_overflow_mm:
+                continue
+            target = OptimizedPlaceTarget(
+                target_xy_mm=support_xy.copy(),
+                target_phi_deg=float(phi),
+                footprint_clearance_mm=float(footprint_clearance_mm),
+                aabb_clearance_mm=float(aabb_clearance_mm),
+                fit_clearance_mm=float(fit_clearance_mm),
+                nudge_xy_mm=np.zeros(2, dtype=np.float64),
+                can_place=True,
+                reason=f"stack_fallback_on_object_{support_i + 1}",
+                planner_layer_z_mm=1.0,  # non-zero: marks as stacked, not a floor placement
+                support_box_index=int(support_i),
+                support_top_z_mm=float(support_top_z),
+            )
+            score = (support_top_z, fit_clearance_mm, support_i)
+            if best is None or score > best[:3]:
+                best = (score[0], score[1], score[2], target)
+
+    if best is None:
+        print(f"[PLAN FALLBACK] {label}: no existing-object stack fallback fit inside bag.")
+        return None
+
+    target = best[3]
+    print(
+        f"[PLAN FALLBACK] {label}: using {target.reason} "
+        f"xy=({target.target_xy_mm[0]:.1f},{target.target_xy_mm[1]:.1f}) "
+        f"support_top_z={target.support_top_z_mm:.1f} phi={target.target_phi_deg:.1f} "
+        f"fit_clearance={target.fit_clearance_mm:.1f}"
+    )
+    return target
 
 
 def _raise_or_hold_safe_z(robot, label: str, z_mm: float | None = None, move_time_s: float | None = None) -> bool:
@@ -1908,11 +2320,33 @@ def _show_display(
 
 
 def _check_abort_key(delay_ms: int = 1) -> None:
+    # Always check the event first so a G pressed during a previous motion step
+    # is not silently lost when the display loop finally gets a turn.
+    if _GO_TO_SURVEY_EVENT.is_set():
+        _GO_TO_SURVEY_EVENT.clear()
+        raise GoToSurveyRequest("go-to-survey pending from event")
     key = read_command_key(delay_ms=delay_ms)
     if key in ("q", "escape", "\x1b"):
         raise UserAbort("quit requested")
     if key == "c":
         raise ClearBoxRequest("clear box requested")
+    if key in ("g", "G"):
+        # Set the event AND raise immediately.  The event persists across any
+        # context where the exception is caught/suppressed so a later motion
+        # boundary or loop iteration will still see it.
+        _GO_TO_SURVEY_EVENT.set()
+        raise GoToSurveyRequest("go-to-survey requested")
+
+
+def _raise_if_go_to_survey() -> None:
+    """Raise GoToSurveyRequest if the G key was pressed since the last check.
+
+    Call this after every blocking robot-motion step so the interrupt takes
+    effect at the next motion boundary rather than waiting for a display loop.
+    """
+    if _GO_TO_SURVEY_EVENT.is_set():
+        _GO_TO_SURVEY_EVENT.clear()
+        raise GoToSurveyRequest("go-to-survey event fired during motion")
 
 
 def _read_yolo_watchdog_frame(
@@ -2024,6 +2458,8 @@ def run_yolo_only_miss_check(
     else:
         print(f"[MISS CHECK] no miss: {reason}")
 
+    last_oh_frame = frames[-1] if frames else None
+
     return MissMatchResult(
         is_miss=bool(is_miss),
         score=aggregate_score,
@@ -2036,6 +2472,7 @@ def run_yolo_only_miss_check(
         area_ratio=best_area_ratio,
         same_class=best_same_class,
         reason=reason,
+        last_overhead_frame=last_oh_frame,
     )
 
 
@@ -2063,116 +2500,192 @@ def _select_best_for_state_by_slot_fit(
     surface_zone: dict,
     base_xy: np.ndarray,
     base_phi_deg: float,
-    column_xy_primary: np.ndarray | None,
-    column_xy_secondary: np.ndarray | None,
     target_limit: int,
 ) -> tuple[BestCandidateResult, dict[int, PlaceabilityOverlayEntry]]:
-    result = choose_best_candidate(state, config=config, robot=robot, placed_boxes=placed_boxes)
-    result.print_debug("[BEST]")
-    if not state.candidates:
-        return result, {}
-
-    overlay: dict[int, PlaceabilityOverlayEntry] = {}
-    scored: list[tuple[float, float, float, int, CandidateDebug, OptimizedPlaceTarget]] = []
-
-    def compute_target_for_candidate(cand_dbg: CandidateDebug) -> OptimizedPlaceTarget:
-        raw_box = _aabb_from_object_candidate_quiet(cand_dbg.candidate, default_label=f"object{object_i}_overlay")
-        if object_i == 1:
-            target_xy = np.asarray(base_xy, dtype=np.float64).reshape(2).copy()
-            target_phi = float(base_phi_deg)
-        elif object_i == 2:
-            if not placed_boxes:
-                raise ValueError("waiting_for_reference_box")
-            moving_padded = pad_aabb(raw_box, PAD_X_MM, PAD_Y_MM, PAD_Z_MM)
-            adjacent_plan = compute_adjacent_placement(
-                reference_padded_box=placed_boxes[-1],
-                moving_padded_box=moving_padded,
-                direction=ADJACENT_DIRECTION,
-                surface_z_mm=float(surface_zone["surface_z_mm"]),
-                place_phi_deg=float(base_phi_deg),
-            )
-            target_xy = adjacent_plan.target_center_xy_mm
-            target_phi = float(adjacent_plan.target_phi_deg)
-        else:
-            if column_xy_primary is None or column_xy_secondary is None:
-                raise ValueError("waiting_for_column_anchor")
-            target_xy = np.asarray(column_xy_primary if object_i % 2 == 1 else column_xy_secondary, dtype=np.float64).reshape(2).copy()
-            target_phi = float(base_phi_deg)
-
-        return _optimize_place_target_for_slot(
-            cand_dbg,
-            target_xy_mm=target_xy,
-            base_phi_deg=target_phi,
-            surface_zone=surface_zone,
-            label=f"object{object_i}",
-            verbose=False,
+    ctx = _planning_sequence_context(
+        object_i=object_i,
+        robot=robot,
+        placed_boxes=placed_boxes,
+        config=config,
+        surface_zone=surface_zone,
+        base_xy=base_xy,
+        base_phi_deg=base_phi_deg,
+        target_limit=target_limit,
+    )
+    selection = select_candidate_for_sequence(
+        PLACE_PLANNING_SEQUENCE_NAME,
+        state,
+        ctx=ctx,
+        runtime=_planning_runtime(),
+    )
+    overlay = {
+        idx: PlaceabilityOverlayEntry(
+            can_place=bool(entry.can_place),
+            target_xy_mm=None if entry.target_xy_mm is None else np.asarray(entry.target_xy_mm, dtype=np.float64).reshape(2).copy(),
+            target_phi_deg=None if entry.target_phi_deg is None else float(entry.target_phi_deg),
+            clearance_mm=None if entry.clearance_mm is None else float(entry.clearance_mm),
+            reason=str(entry.reason),
         )
-
-    for idx, cand_dbg in enumerate(state.candidates):
+        for idx, entry in selection.overlay.items()
+    }
+    rescored: list[tuple[float, float, int, CandidateDebug, Any, OptimizedPlaceTarget]] = []
+    for idx, cand_dbg in enumerate(getattr(state, "candidates", [])):
+        decision = next((d for d in getattr(selection.result, "decisions", []) if d.dbg is cand_dbg), None)
+        if decision is None or not bool(decision.passed):
+            continue
         try:
-            optimized = compute_target_for_candidate(cand_dbg)
-            decision = next((d for d in result.decisions if d.dbg is cand_dbg), None)
-            if decision is None or not decision.passed:
-                reject_reason = "selector_rejected"
-                if decision is not None and decision.reject_reasons:
-                    reject_reason = ";".join(decision.reject_reasons[:2])
-                overlay[idx] = PlaceabilityOverlayEntry(
-                    can_place=False,
-                    target_xy_mm=optimized.target_xy_mm.copy(),
-                    target_phi_deg=float(optimized.target_phi_deg),
-                    clearance_mm=float(optimized.fit_clearance_mm),
-                    reason=reject_reason,
+            target = _compute_candidate_place_target_for_sequence(
+                cand_dbg,
+                state=state,
+                object_i=object_i,
+                robot=robot,
+                placed_boxes=placed_boxes,
+                config=config,
+                surface_zone=surface_zone,
+                base_xy=base_xy,
+                base_phi_deg=base_phi_deg,
+                target_limit=target_limit,
+            )
+            overlay[idx] = PlaceabilityOverlayEntry(
+                can_place=bool(target.can_place),
+                target_xy_mm=target.target_xy_mm.copy(),
+                target_phi_deg=float(target.target_phi_deg),
+                clearance_mm=float(target.fit_clearance_mm),
+                reason=str(target.reason),
+            )
+            if target.can_place:
+                rescored.append(
+                    (
+                        float(getattr(decision, "volume_mm3", 0.0)),
+                        float(target.fit_clearance_mm),
+                        int(getattr(cand_dbg.candidate, "index", -1)),
+                        cand_dbg,
+                        decision,
+                        target,
+                    )
                 )
-                continue
-            overlay[idx] = PlaceabilityOverlayEntry(
-                can_place=bool(optimized.can_place),
-                target_xy_mm=optimized.target_xy_mm.copy(),
-                target_phi_deg=float(optimized.target_phi_deg),
-                clearance_mm=float(optimized.fit_clearance_mm),
-                reason=optimized.reason,
-            )
-            if optimized.can_place:
-                volume_mm3 = float(decision.volume_mm3)
-                scored.append((float(optimized.fit_clearance_mm), volume_mm3, -float(np.dot(optimized.nudge_xy_mm, optimized.nudge_xy_mm)), int(getattr(cand_dbg.candidate, 'index', -1)), cand_dbg, optimized))
         except Exception as exc:
-            overlay[idx] = PlaceabilityOverlayEntry(
-                can_place=False,
-                target_xy_mm=None,
-                target_phi_deg=None,
-                clearance_mm=None,
-                reason=str(exc),
-            )
-
-    if not scored:
-        # Do not hard-stop the run: fall back to largest valid candidate and let
-        # placement logic continue trying to find a feasible target.
-        if result.selected_decision is not None:
-            result.selected = result.selected_decision.dbg
-            state.selected_index = state.candidates.index(result.selected)
-            print(
-                f"[BEST PACK WARN] no slot-fit candidate for object {object_i}; "
-                f"falling back to largest valid candidate [{result.selected_decision.candidate_index}] "
-                f"{result.selected_decision.class_name}."
-            )
-        else:
-            result.selected = None
-            result.selected_decision = None
-        return result, overlay
-
-    scored.sort(key=lambda item: (item[0], item[1], item[2], -item[3]), reverse=True)
-    best = scored[0]
-    selected_dbg = best[4]
-    selected_optimized = best[5]
-    best_decision = next((d for d in result.decisions if d.dbg is selected_dbg), None)
-    if best_decision is not None:
-        result.selected = selected_dbg
-        result.selected_decision = best_decision
+            overlay[idx] = PlaceabilityOverlayEntry(False, None, None, None, str(exc))
+    if rescored:
+        rescored.sort(reverse=True)
+        _volume, _clearance, _candidate_i, selected_dbg, selected_decision, selected_target = rescored[0]
+        selection.result.selected = selected_dbg
+        selection.result.selected_decision = selected_decision
         state.selected_index = state.candidates.index(selected_dbg)
         print(
-            f"[BEST PACK] object={object_i} selected={best_decision.candidate_index} {best_decision.class_name} "
-            f"fit_clearance={selected_optimized.fit_clearance_mm:.1f}mm volume={best_decision.volume_cm3:.1f}cm3"
+            f"[PLAN] selected #{selected_decision.candidate_index} {selected_decision.class_name}: "
+            f"placeable footprint clearance={selected_target.fit_clearance_mm:.1f}mm "
+            f"target=({selected_target.target_xy_mm[0]:.1f},{selected_target.target_xy_mm[1]:.1f}) "
+            f"phi={selected_target.target_phi_deg:.1f}"
         )
-    return result, overlay
+    elif selection.result.selected is not None:
+        print("[PLAN] no candidate has a valid gripper/bag footprint; clearing selection before pick.")
+        selection.result.selected = None
+        selection.result.selected_decision = None
+    return selection.result, overlay
+
+
+def _compute_candidate_place_target_for_sequence(
+    cand_dbg: CandidateDebug,
+    *,
+    state: SurveyState | None,
+    object_i: int,
+    robot,
+    placed_boxes: list,
+    config: BestCandidateConfig,
+    surface_zone: dict,
+    base_xy: np.ndarray,
+    base_phi_deg: float,
+    target_limit: int,
+) -> OptimizedPlaceTarget:
+    effective_state = state
+    if effective_state is None:
+        effective_state = type("PlanningStateStub", (), {"candidates": [cand_dbg], "selected_index": 0})()
+    ctx = _planning_sequence_context(
+        object_i=object_i,
+        robot=robot,
+        placed_boxes=placed_boxes,
+        config=config,
+        surface_zone=surface_zone,
+        base_xy=base_xy,
+        base_phi_deg=base_phi_deg,
+        target_limit=target_limit,
+    )
+    try:
+        target = compute_sequence_place_target(
+            PLACE_PLANNING_SEQUENCE_NAME,
+            cand_dbg,
+            state=effective_state,
+            ctx=ctx,
+            runtime=_planning_runtime(),
+        )
+        optimized = _sequence_target_to_optimized_target(target)
+    except Exception as exc:
+        print(f"[PLAN] sequence target failed for object{object_i}: {exc}")
+        fallback = _stack_fallback_on_existing_box(
+            cand_dbg,
+            placed_boxes=placed_boxes,
+            surface_zone=surface_zone,
+            base_phi_deg=base_phi_deg,
+            label=f"object{object_i}",
+        )
+        if fallback is not None:
+            return fallback
+        # Desperate last-resort: accept slight bag-boundary overflow rather than skip
+        # a physically reachable object entirely.
+        desperate = _stack_fallback_on_existing_box(
+            cand_dbg,
+            placed_boxes=placed_boxes,
+            surface_zone=surface_zone,
+            base_phi_deg=base_phi_deg,
+            label=f"object{object_i}",
+            desperate_overflow_mm=_DESPERATE_OVERFLOW_MM,
+        )
+        if desperate is not None:
+            return desperate
+        raise
+    fit = _optimize_place_target_for_slot(
+        cand_dbg,
+        target_xy_mm=optimized.target_xy_mm,
+        base_phi_deg=optimized.target_phi_deg,
+        surface_zone=surface_zone,
+        label=f"object{object_i}",
+        verbose=False,
+    )
+    out = OptimizedPlaceTarget(
+        target_xy_mm=fit.target_xy_mm,
+        target_phi_deg=fit.target_phi_deg,
+        footprint_clearance_mm=fit.footprint_clearance_mm,
+        aabb_clearance_mm=fit.aabb_clearance_mm,
+        fit_clearance_mm=fit.fit_clearance_mm,
+        nudge_xy_mm=fit.nudge_xy_mm,
+        can_place=bool(optimized.can_place and fit.can_place),
+        reason=fit.reason if not fit.can_place else optimized.reason,
+        planner_layer_z_mm=optimized.planner_layer_z_mm,
+        support_box_index=optimized.support_box_index,
+        support_top_z_mm=optimized.support_top_z_mm,
+    )
+    if not out.can_place:
+        fallback = _stack_fallback_on_existing_box(
+            cand_dbg,
+            placed_boxes=placed_boxes,
+            surface_zone=surface_zone,
+            base_phi_deg=base_phi_deg,
+            label=f"object{object_i}",
+        )
+        if fallback is not None:
+            return fallback
+        desperate = _stack_fallback_on_existing_box(
+            cand_dbg,
+            placed_boxes=placed_boxes,
+            surface_zone=surface_zone,
+            base_phi_deg=base_phi_deg,
+            label=f"object{object_i}",
+            desperate_overflow_mm=_DESPERATE_OVERFLOW_MM,
+        )
+        if desperate is not None:
+            return desperate
+    return out
 
 
 def _print_knob_group(title: str, lines: list[str]) -> None:
@@ -2187,6 +2700,8 @@ def print_knob_overview() -> None:
         "1. Run count / loop control",
         [
             f"TARGET_OBJECT_COUNT={TARGET_OBJECT_COUNT}",
+            f"RUNTIME_CONTEXT={_RUNTIME_CONTEXT.name!r}",
+            f"WORKSPACE_PROFILE={_WORKSPACE.name!r}",
             f"RUN_UNTIL_NO_VALID_CANDIDATE={RUN_UNTIL_NO_VALID_CANDIDATE}",
             f"MAX_OBJECT_COUNT_SAFETY={MAX_OBJECT_COUNT_SAFETY}",
             f"NO_CANDIDATE_RETRY_COUNT={NO_CANDIDATE_RETRY_COUNT}",
@@ -2216,8 +2731,9 @@ def print_knob_overview() -> None:
     _print_knob_group(
         "3. Packing conservatism / slot fit",
         [
-            f"PLACE_SURFACE_ZONE_NAME={_pick_one_mod.PLACE_SURFACE_ZONE_NAME!r}",
-            f"ADJACENT_DIRECTION={ADJACENT_DIRECTION!r}",
+            f"PLACE_SCENE_NAME={_pick_one_mod.PLACE_SCENE_NAME!r}",
+            f"PLACE_PLANNING_SEQUENCE_NAME={PLACE_PLANNING_SEQUENCE_NAME!r}",
+            f"AVAILABLE_PLANNING_SEQUENCES={list(list_planning_sequences())}",
             f"EFFICIENT_PACKING_ENABLED={EFFICIENT_PACKING_ENABLED}",
             f"EFFICIENT_PACKING_REQUIRE_SLOT_FIT={EFFICIENT_PACKING_REQUIRE_SLOT_FIT}",
             f"PLACE_XY_NUDGE_ENABLED={PLACE_XY_NUDGE_ENABLED} step={PLACE_XY_NUDGE_STEP_MM} max={PLACE_XY_NUDGE_MAX_MM}",
@@ -2225,6 +2741,7 @@ def print_knob_overview() -> None:
             f"PLACE_GRIPPER_FOOTPRINT_WIDTH_MM={PLACE_GRIPPER_FOOTPRINT_WIDTH_MM}",
             f"PLACE_GRIPPER_FOOTPRINT_LENGTH_L_MM={PLACE_GRIPPER_FOOTPRINT_LENGTH_L_MM}",
             f"PLACE_GRIPPER_FOOTPRINT_EXTRA_MARGIN_MM={PLACE_GRIPPER_FOOTPRINT_EXTRA_MARGIN_MM}",
+            f"PLACE_BAG_LOCAL_HEIGHT_MM={PLACE_BAG_LOCAL_HEIGHT_MM}",
             f"PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE={PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE}",
             f"PLACE_ROTATION_CANDIDATE_OFFSETS_DEG={PLACE_ROTATION_CANDIDATE_OFFSETS_DEG}",
             f"USE_PICK_PHI_FOR_PLACE={_pick_one_mod.USE_PICK_PHI_FOR_PLACE}",
@@ -2351,6 +2868,8 @@ def print_knob_overview() -> None:
 
 
 def main() -> int:
+    _run_log_fh = _install_one_run_log()
+    validate_planning_sequence_name(PLACE_PLANNING_SEQUENCE_NAME)
     _configure_modules()
     _survey_pipeline_mod.OVERHEAD_FRESH_READ_DISCARD_FRAMES = OVERHEAD_FRESH_READ_DISCARD_FRAMES
     _survey_pipeline_mod.OVERHEAD_FRESH_READ_DELAY_S = OVERHEAD_FRESH_READ_DELAY_S
@@ -2361,7 +2880,7 @@ def main() -> int:
     print("[MAIN] YOLO-only miss watchdog runs before any RAFT recovery localization.")
     print_knob_overview()
     print_z_safety_settings("[MAIN] Z safety", config=DEFAULT_Z_SAFETY)
-    print("[MAIN] camera window: q=quit, c=clear box/reset stack. No s key is needed.")
+    print("[MAIN] camera window: q=quit, c=clear box/reset stack, g=go to survey pose + rehome J3.")
 
     selector_config = _best_candidate_config()
     device_info = select_torch_device(use_cuda=USE_CUDA, use_half=USE_HALF)
@@ -2381,7 +2900,7 @@ def main() -> int:
     stereo = SimpleStereoCamera(STEREO_INDEX)
     robot = startup_robot()
 
-    surface_zone = _load_place_surface_zone()
+    surface_zone = _load_place_scene()
     surface_z = float(surface_zone["surface_z_mm"])
     base_xy = np.asarray(surface_zone["center_xy_mm"], dtype=np.float64).reshape(2)
     place_phi = float(surface_zone["default_phi_deg"])
@@ -2392,9 +2911,7 @@ def main() -> int:
     placed_boxes: list = []
     state: SurveyState | None = None
     held: CandidateDebug | None = None
-    column_xy_primary: np.ndarray | None = None
-    column_xy_secondary: np.ndarray | None = None
-    status_lines = ["AUTO: starting up", "The first survey will begin automatically.", "q=quit | c=clear box"]
+    status_lines = ["AUTO: starting up", "The first survey will begin automatically.", "q=quit | c=clear box | g=survey pose+rehome"]
 
     camera_lock = threading.Lock()
     survey_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="camera_work")
@@ -2421,49 +2938,20 @@ def main() -> int:
         *,
         object_i: int,
     ) -> OptimizedPlaceTarget:
-        raw_box = _aabb_from_object_candidate_quiet(cand_dbg.candidate, default_label=f"object{object_i}_overlay")
-        if object_i == 1:
-            target_xy = np.asarray(base_xy, dtype=np.float64).reshape(2).copy()
-            target_phi = float(place_phi)
-            return _optimize_place_target_for_slot(
-                cand_dbg,
-                target_xy_mm=target_xy,
-                base_phi_deg=target_phi,
-                surface_zone=surface_zone,
-                label=f"object{object_i}_base",
-                verbose=False,
-            )
-        if object_i == 2:
-            if not placed_boxes:
-                raise ValueError("waiting_for_reference_box")
-            moving_padded = pad_aabb(raw_box, PAD_X_MM, PAD_Y_MM, PAD_Z_MM)
-            adjacent_plan = compute_adjacent_placement(
-                reference_padded_box=placed_boxes[-1],
-                moving_padded_box=moving_padded,
-                direction=ADJACENT_DIRECTION,
-                surface_z_mm=surface_z,
-                place_phi_deg=place_phi,
-            )
-            return _optimize_place_target_for_slot(
-                cand_dbg,
-                target_xy_mm=adjacent_plan.target_center_xy_mm.copy(),
-                base_phi_deg=float(adjacent_plan.target_phi_deg),
-                surface_zone=surface_zone,
-                label=f"object{object_i}_adjacent",
-                verbose=False,
-            )
-
-        if column_xy_primary is None or column_xy_secondary is None:
-            raise ValueError("waiting_for_column_anchor")
-        target_xy = column_xy_primary if object_i % 2 == 1 else column_xy_secondary
-        return _optimize_place_target_for_slot(
+        return _compute_candidate_place_target_for_sequence(
             cand_dbg,
-            target_xy_mm=np.asarray(target_xy, dtype=np.float64).reshape(2).copy(),
-            base_phi_deg=float(place_phi),
+            state=state,
+            object_i=object_i,
+            robot=robot,
+            placed_boxes=placed_boxes,
+            config=selector_config,
             surface_zone=surface_zone,
-            label=f"object{object_i}_stack",
-            verbose=False,
+            base_xy=base_xy,
+            base_phi_deg=place_phi,
+            target_limit=target_limit,
         )
+
+    _placeability_cache: dict[tuple, dict | None] = {}
 
     def build_placeability_overlay(
         display_state: SurveyState | None,
@@ -2472,6 +2960,15 @@ def main() -> int:
     ) -> dict[int, PlaceabilityOverlayEntry] | None:
         if display_state is None or not display_state.candidates:
             return None
+
+        # Cache keyed by survey-state identity + placed count + object slot.
+        # Planning is expensive (bag_local AABB solver runs for every candidate).
+        # The result only changes when the survey state or placed_boxes changes,
+        # so we can safely reuse it across the many 30-50 ms display-refresh ticks
+        # that happen during miss-check and place-hover waits.
+        cache_key = (id(display_state), len(placed_boxes), next_object_i)
+        if cache_key in _placeability_cache:
+            return _placeability_cache[cache_key]
 
         object_i = int(next_object_i or max(1, len(placed_boxes) + 1))
         overlay: dict[int, PlaceabilityOverlayEntry] = {}
@@ -2493,10 +2990,12 @@ def main() -> int:
                     clearance_mm=None,
                     reason=str(exc),
                 )
+        _placeability_cache.clear()  # keep only the latest entry
+        _placeability_cache[cache_key] = overlay
         return overlay
 
     def handle_clear_box_request() -> None:
-        nonlocal placed_boxes, state, held, column_xy_primary, column_xy_secondary, prefetched_future
+        nonlocal placed_boxes, state, held, prefetched_future
         print("[CLEAR BOX] requested from camera window.")
         set_status([
             "CLEAR BOX: raising arm",
@@ -2552,8 +3051,6 @@ def main() -> int:
         placed_boxes = []
         state = None
         held = None
-        column_xy_primary = None
-        column_xy_secondary = None
         print("[CLEAR BOX] placement occupancy reset. Continuing in continuous mode until no valid candidate.")
         set_status([
             "CLEAR BOX: reset complete",
@@ -2562,10 +3059,10 @@ def main() -> int:
             "Survey will restart now.",
         ])
 
-    def run_survey_now(label: str) -> SurveyState:
+    def run_survey_now(label: str, *, seed_overhead_frame: np.ndarray | None = None) -> SurveyState:
         nonlocal state
         print(f"[SURVEY AUTO] starting blocking survey for {label}")
-        set_status([f"SURVEY: {label}", "Capturing burst, segmenting, computing disparity...", "Selection will use largest valid volume.", "q=quit | c=clear box after current operation"])
+        set_status([f"SURVEY: {label}", "Capturing burst, segmenting, computing disparity...", "Selection will use largest valid volume.", "q=quit | c=clear box | g=survey pose+rehome after current operation"])
         _show_display(
             state=state,
             overhead=overhead,
@@ -2575,7 +3072,7 @@ def main() -> int:
             placeability_overlay=build_placeability_overlay(state),
         )
         with camera_lock:
-            surveyed = run_survey(overhead, stereo, detector, stereo_calib, rectifier, yolo, raft, robot, bundle)
+            surveyed = run_survey(overhead, stereo, detector, stereo_calib, rectifier, yolo, raft, robot, bundle, seed_overhead_frame=seed_overhead_frame)
         state = surveyed
         print(f"[SURVEY AUTO] completed blocking survey for {label}: candidates={len(surveyed.candidates)}")
         return surveyed
@@ -2606,15 +3103,15 @@ def main() -> int:
         print(f"[PREFETCH] submitting next survey for object {next_object_i} at place descent")
         prefetched_future = survey_executor.submit(prefetch_worker, next_object_i)
 
-    def get_survey_for_object(object_i: int) -> SurveyState:
+    def get_survey_for_object(object_i: int, *, seed_overhead_frame: np.ndarray | None = None) -> SurveyState:
         nonlocal state, prefetched_future
         if prefetched_future is None:
-            return run_survey_now(flow_label(object_i))
+            return run_survey_now(flow_label(object_i), seed_overhead_frame=seed_overhead_frame)
 
         set_status([
             f"WAITING: prefetched survey for object {object_i}",
             "Camera reads are owned by the survey thread.",
-            "q=quit | c=clear box",
+            "q=quit | c=clear box | g=survey pose+rehome",
         ])
         while not prefetched_future.done():
             _show_display(
@@ -2665,6 +3162,8 @@ def main() -> int:
                 raise UserAbort("quit requested")
             if key == "c":
                 raise ClearBoxRequest("clear box requested")
+            if key in ("g", "G"):
+                raise GoToSurveyRequest("go-to-survey requested")
             if key == resume_key:
                 print("[FLOW] resume requested; surveying again.")
                 return "resume"
@@ -2681,7 +3180,7 @@ def main() -> int:
             "MISS CHECK: collecting YOLO burst",
             f"object {attempt.object_i} attempt {attempt.attempt_number}",
             "RAFT is skipped unless this confirms a miss.",
-            "q=quit | c=clear box",
+            "q=quit | c=clear box | g=survey pose+rehome",
         ])
         print("[MISS CHECK] submitting YOLO-only watchdog to the single camera executor.")
         return survey_executor.submit(
@@ -2701,7 +3200,7 @@ def main() -> int:
             "MISS CHECK: confirming at place hover",
             "Waiting for YOLO-only burst result.",
             "No release descent until the watchdog clears.",
-            "q=quit | c=clear box",
+            "q=quit | c=clear box | g=survey pose+rehome",
         ])
         while not future.done():
             _show_display(
@@ -2737,7 +3236,6 @@ def main() -> int:
         destination_surface_for_call: float,
         place_descent_cb: Callable[[], None] | None,
     ) -> tuple[str, MissMatchResult | None]:
-        miss_future = start_miss_watchdog(attempt)
         prepared = _prepare_place_at_target(
             robot,
             held_object,
@@ -2746,33 +3244,13 @@ def main() -> int:
             destination_surface_z_mm=destination_surface_for_call,
         )
         if prepared is None:
-            if miss_future is not None and not miss_future.done():
-                miss_future.cancel()
             return "failed", None
 
+        # Only start the watchdog once the held object is above the place hover.
+        # Starting earlier can see the object in the gripper near the pick site
+        # and falsely trigger recovery on a successful pick.
+        miss_future = start_miss_watchdog(attempt)
         miss_result = wait_for_miss_watchdog(miss_future, attempt)
-        if miss_result.is_miss and MISS_CONFIRM_AT_PLACE_HOVER_ONLY:
-            print("[MISS CHECK] preliminary burst says miss; running YOLO-only hover confirmation before recovery.")
-            set_status([
-                "MISS CHECK: hover confirmation",
-                "Preliminary burst saw the object at pick site.",
-                "Confirming with YOLO only; RAFT still skipped.",
-                "q=quit | c=clear box",
-            ])
-            hover_result = run_yolo_only_miss_check(
-                attempt=attempt,
-                overhead=overhead,
-                stereo=stereo,
-                yolo=yolo,
-                bundle=bundle,
-                camera_lock=camera_lock,
-            )
-            print(
-                f"[MISS CHECK HOVER AUDIT] is_miss={hover_result.is_miss} "
-                f"score={hover_result.score:.3f} hits={hover_result.hits}/{hover_result.burst_count} "
-                f"reason={hover_result.reason}"
-            )
-            miss_result = hover_result
         if miss_result.is_miss:
             print("[MISS ABORT] confirmed before release descent. Canceling pending place sequence.")
             set_status([
@@ -2787,8 +3265,8 @@ def main() -> int:
         set_status([
             "MISS CHECK: clear",
             "Proceeding to place descent and release.",
-            "Next survey may prefetch during descent.",
-            "q=quit | c=clear box",
+            "Next survey starts after the release finishes.",
+            "q=quit | c=clear box | g=survey pose+rehome",
         ])
         if not _finish_place_from_hover(robot, prepared, on_start_place_descent=place_descent_cb):
             return "failed", miss_result
@@ -2804,11 +3282,23 @@ def main() -> int:
             placeability_overlay=build_placeability_overlay(state),
         )
 
+        import datetime as _dt
+        _run_ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        _run_snapshot_dir: Path = RUN_SNAPSHOT_BASE_DIR / f"run_{_run_ts}"
+        _snapshots: list[_ObjectSnapshot] = []
+        if SAVE_RUN_SNAPSHOT:
+            _run_snapshot_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[SNAPSHOT] run snapshot dir: {_run_snapshot_dir}")
+
         i = 1
+        _survey_seed_oh: list[np.ndarray | None] = [None]  # mutable box: seed overhead frame for next survey
         while run_until_no_valid_active() or i <= target_limit:
             try:
                 print(f"\n[FLOW] Object {i}/{'continuous' if run_until_no_valid_active() else target_limit}")
-                survey_state = get_survey_for_object(i)
+                _raise_if_go_to_survey()   # catch G pressed during previous operation
+                seed = _survey_seed_oh[0]
+                _survey_seed_oh[0] = None
+                survey_state = get_survey_for_object(i, seed_overhead_frame=seed)
 
                 if EFFICIENT_PACKING_ENABLED:
                     selection, _slot_overlay = _select_best_for_state_by_slot_fit(
@@ -2820,8 +3310,6 @@ def main() -> int:
                         surface_zone=surface_zone,
                         base_xy=base_xy,
                         base_phi_deg=place_phi,
-                        column_xy_primary=column_xy_primary,
-                        column_xy_secondary=column_xy_secondary,
                         target_limit=target_limit,
                     )
                 else:
@@ -2840,8 +3328,23 @@ def main() -> int:
                         f"NO VALID CANDIDATE for object {i}",
                         f"Retrying survey in {NO_CANDIDATE_RETRY_DELAY_S:.1f}s.",
                         "Check terminal for exact rejection reasons.",
-                        "q=quit | c=clear box",
+                        "q=quit | c=clear box | g=survey pose+rehome",
                     ])
+                    # Move arm to survey pose before retry survey so it doesn't
+                    # occlude the platform in the camera view.
+                    if SURVEY_CLEAR_ON_NO_CANDIDATE:
+                        print("[FLOW] no candidate: moving arm to survey pose before retry survey.")
+                        set_status([
+                            f"NO CANDIDATE: clearing arm to survey pose",
+                            f"Retry survey {retry_i}/{NO_CANDIDATE_RETRY_COUNT} will follow.",
+                            "q=quit | c=clear box | g=survey pose+rehome",
+                        ])
+                        try:
+                            _raise_or_hold_safe_z(robot, "[RETRY SURVEY] raise", CLEAR_BOX_Z_MM, CLEAR_BOX_MOVE_TIME_S)
+                            _move_to_recovery_pose(robot)
+                        except Exception as _exc:
+                            print(f"[RETRY SURVEY] WARN: could not move to survey pose: {_exc}")
+
                     deadline = time.time() + float(NO_CANDIDATE_RETRY_DELAY_S)
                     while time.time() < deadline:
                         _show_display(
@@ -2864,8 +3367,6 @@ def main() -> int:
                             surface_zone=surface_zone,
                             base_xy=base_xy,
                             base_phi_deg=place_phi,
-                            column_xy_primary=column_xy_primary,
-                            column_xy_secondary=column_xy_secondary,
                             target_limit=target_limit,
                         )
                     else:
@@ -2926,9 +3427,67 @@ def main() -> int:
                         f"local_try={local_pick_try}/{max_local_pick_attempts}"
                     )
 
+                    # ── platform obstacle check before pick ───────────────────
+                    _obs_ok, _obs_warnings = _check_pick_for_platform_obstacles(cand_dbg, survey_state)
+                    for _w in _obs_warnings:
+                        print(_w)
+                    if not _obs_ok:
+                        print(f"[OBSTACLE] skipping candidate [{c.index}] {c.yolo.class_name} — too close to another item")
+                        excluded_pick_indices.add(c_idx)
+                        survey_state.candidates = [
+                            dbg for dbg in survey_state.candidates
+                            if int(getattr(dbg.candidate, "index", -1)) not in excluded_pick_indices
+                        ]
+                        if not survey_state.candidates:
+                            selection.selected = None
+                            break
+                        if EFFICIENT_PACKING_ENABLED:
+                            selection, _ = _select_best_for_state_by_slot_fit(
+                                survey_state, object_i=i, robot=robot,
+                                placed_boxes=placed_boxes, config=selector_config,
+                                surface_zone=surface_zone, base_xy=base_xy,
+                                base_phi_deg=place_phi, target_limit=target_limit,
+                            )
+                        else:
+                            selection = _select_best_for_state(
+                                survey_state, robot=robot,
+                                placed_boxes=placed_boxes, config=selector_config,
+                            )
+                        continue
+
                     attempt = make_pick_attempt_record(object_i=i, cand_dbg=cand_dbg, robot=robot, attempt_number=1)
                     if execute_pick_selected(robot, cand_dbg, bundle=bundle):
                         held = cand_dbg
+                        # ── snapshot: save stereo / disparity / overhead immediately ──
+                        if SAVE_RUN_SNAPSHOT:
+                            try:
+                                c_snap = cand_dbg.candidate
+                                det_snap = getattr(cand_dbg, "best_detection", None)
+                                _snap = _ObjectSnapshot(
+                                    object_i=i,
+                                    class_name=str(getattr(getattr(c_snap, "yolo", None), "class_name", "unknown")),
+                                    pick_xy_mm=[float(c_snap.target_xy[0]), float(c_snap.target_xy[1])],
+                                    pick_z_mm=float(getattr(getattr(c_snap, "z_debug", None), "robust_top_z_mm", 0.0) or 0.0),
+                                    pick_grasp_z_mm=float(getattr(getattr(c_snap, "z_debug", None), "grasp_z_mm", 0.0) or 0.0),
+                                    pick_phi_deg=float(getattr(c_snap, "pick_phi_deg", 0.0) or 0.0),
+                                    place_xy_mm=None,
+                                    place_phi_deg=None,
+                                    destination_surface_z_mm=None,
+                                    place_result="pending",
+                                    raw_box_center_xyz_mm=None,
+                                    raw_box_size_xyz_mm=None,
+                                    padded_box_center_xyz_mm=None,
+                                    padded_box_size_xyz_mm=None,
+                                    detection_class=str(getattr(det_snap, "class_name", "unknown")) if det_snap else "unknown",
+                                    detection_confidence=float(getattr(det_snap, "confidence", 0.0)) if det_snap else 0.0,
+                                    detection_bbox_xyxy=[float(v) for v in det_snap.bbox] if det_snap and det_snap.bbox is not None else None,
+                                )
+                                # Use the miss-check seed frame as overhead if available, else survey overhead
+                                _snap_oh = _survey_seed_oh[0] or (survey_state.overhead_frame if survey_state else None)
+                                _save_object_snapshot(_snap, _run_snapshot_dir, survey_state=survey_state, cand_dbg=cand_dbg, overhead_frame=_snap_oh)
+                                _snapshots.append(_snap)
+                            except Exception as _snap_exc:
+                                print(f"[SNAPSHOT WARN] pick snapshot failed for object {i}: {_snap_exc}")
                         break
 
                     excluded_pick_indices.add(c_idx)
@@ -2957,8 +3516,6 @@ def main() -> int:
                             surface_zone=surface_zone,
                             base_xy=base_xy,
                             base_phi_deg=place_phi,
-                            column_xy_primary=column_xy_primary,
-                            column_xy_secondary=column_xy_secondary,
                             target_limit=target_limit,
                         )
                     else:
@@ -2982,24 +3539,43 @@ def main() -> int:
                 optimized_target = compute_candidate_place_target(cand_dbg, object_i=i)
                 target_xy = optimized_target.target_xy_mm.copy()
                 target_phi = float(optimized_target.target_phi_deg)
-                if i == 1:
-                    column_xy_primary = np.asarray(target_xy, dtype=np.float64).reshape(2)
-                elif i == 2:
-                    column_xy_secondary = np.asarray(target_xy, dtype=np.float64).reshape(2)
                 print(
                     f"[FLOW] object{i} optimized target xy=({target_xy[0]:.1f},{target_xy[1]:.1f}) "
                     f"phi={target_phi:.1f} nudge=({optimized_target.nudge_xy_mm[0]:.1f},{optimized_target.nudge_xy_mm[1]:.1f}) "
                     f"fit_clearance={optimized_target.fit_clearance_mm:.1f} can_place={optimized_target.can_place}"
                 )
                 if i >= 3 and len(placed_boxes) >= 1:
-                    below_idx = i - 2
-                    below_box = placed_boxes[below_idx - 1]
-                    below_top_z_mm = float(below_box.raw_box.max_xyz_mm[2])
+                    support_idx = optimized_target.support_box_index
+                    if support_idx is None and optimized_target.support_top_z_mm is not None:
+                        support_idx = next(
+                            (
+                                idx
+                                for idx, box in enumerate(placed_boxes)
+                                if abs(float(box.raw_box.max_xyz_mm[2]) - float(optimized_target.support_top_z_mm)) <= 1e-3
+                            ),
+                            None,
+                        )
+                    if support_idx is None:
+                        support_idx = max(
+                            range(len(placed_boxes)),
+                            key=lambda idx: (
+                                -float(np.linalg.norm(np.asarray(placed_boxes[idx].raw_box.center_xyz_mm[:2], dtype=np.float64) - target_xy)),
+                                float(placed_boxes[idx].raw_box.max_xyz_mm[2]),
+                            ),
+                        )
+                    below_idx = int(support_idx) + 1
+                    below_box = placed_boxes[int(support_idx)]
+                    below_top_z_mm = float(
+                        optimized_target.support_top_z_mm
+                        if optimized_target.support_top_z_mm is not None
+                        else below_box.raw_box.max_xyz_mm[2]
+                    )
                     destination_surface_for_call = float(below_top_z_mm)
                     print(
-                        f"[FLOW] object{i} stacking target (2-per-layer): "
+                        f"[FLOW] object{i} stacking target: "
                         f"xy=({target_xy[0]:.1f},{target_xy[1]:.1f}) "
                         f"below_object={below_idx} below_top_z_mm={below_top_z_mm:.1f} "
+                        f"reason={optimized_target.reason} "
                         "release_z=shared_policy(surface=below_top_z)"
                     )
 
@@ -3028,9 +3604,30 @@ def main() -> int:
                     surface_zone=surface_zone,
                     label=f"object{i}",
                 ):
-                    held = None
-                    print("[FLOW] placement footprint gate failed; re-surveying current slot.")
-                    continue
+                    # Footprint fails at the planned position — try drop-in mode:
+                    # move the release target to the bag center where the gripper
+                    # always fits (bag center >> gripper width), and try any phi.
+                    bag_center_xy = np.asarray(surface_zone["center_xy_mm"], dtype=np.float64).reshape(2)
+                    drop_phi, drop_clearance, drop_inside = _evaluate_place_phi_for_edge_clearance(
+                        held,
+                        target_xy_mm=bag_center_xy,
+                        base_phi_deg=place_phi,
+                        surface_zone=surface_zone,
+                        label=f"object{i}_drop_in",
+                        verbose=False,
+                    )
+                    if drop_inside:
+                        print(
+                            f"[FLOW] footprint fails at optimal XY — using drop-in mode: "
+                            f"releasing at bag center ({bag_center_xy[0]:.1f},{bag_center_xy[1]:.1f}) "
+                            f"phi={drop_phi:.1f} clearance={drop_clearance:.1f}mm"
+                        )
+                        target_xy = bag_center_xy
+                        target_phi = drop_phi
+                    else:
+                        held = None
+                        print("[FLOW] placement footprint gate failed even at bag center; re-surveying.")
+                        continue
 
                 place_status, miss_result = place_or_detect_miss(
                     held_object=held,
@@ -3099,12 +3696,22 @@ def main() -> int:
                         surface_zone=surface_zone,
                         label=f"object{i}_retry",
                     ):
-                        held = None
-                        if str(ON_RETRY_FAIL).lower() == "skip":
-                            print("[FLOW] ON_RETRY_FAIL='skip': re-surveying this bag slot after retry footprint rejection.")
-                            continue
-                        run_ok = False
-                        break
+                        bag_center_xy = np.asarray(surface_zone["center_xy_mm"], dtype=np.float64).reshape(2)
+                        drop_phi, _, drop_inside = _evaluate_place_phi_for_edge_clearance(
+                            held, target_xy_mm=bag_center_xy, base_phi_deg=place_phi,
+                            surface_zone=surface_zone, label=f"object{i}_retry_drop_in", verbose=False,
+                        )
+                        if drop_inside:
+                            print("[FLOW] retry drop-in: footprint failed; releasing at bag center.")
+                            target_xy = bag_center_xy
+                            target_phi = drop_phi
+                        else:
+                            held = None
+                            if str(ON_RETRY_FAIL).lower() == "skip":
+                                print("[FLOW] ON_RETRY_FAIL='skip': re-surveying after retry footprint rejection.")
+                                continue
+                            run_ok = False
+                            break
 
                     retry_place_status, _retry_miss_result = place_or_detect_miss(
                         held_object=held,
@@ -3173,13 +3780,64 @@ def main() -> int:
                     )
                     placed_boxes.append(placed)
 
+                # ── snapshot: record place result + AABB ──────────────────────
+                if SAVE_RUN_SNAPSHOT and _snapshots and _snapshots[-1].object_i == i:
+                    try:
+                        s = _snapshots[-1]
+                        s.place_result = str(place_status)
+                        s.place_xy_mm = [float(target_xy[0]), float(target_xy[1])]
+                        s.place_phi_deg = float(target_phi)
+                        s.destination_surface_z_mm = float(destination_surface_for_call)
+                        s.raw_box_center_xyz_mm = [float(v) for v in raw_box.center_xyz_mm]
+                        s.raw_box_size_xyz_mm = [float(v) for v in raw_box.size_xyz_mm]
+                        try:
+                            pb = placed  # PaddedBox3D: .raw_box = unpadded, .padded_box = padded
+                            s.padded_box_center_xyz_mm = [float(v) for v in pb.padded_box.center_xyz_mm]
+                            s.padded_box_size_xyz_mm = [float(v) for v in pb.padded_box.size_xyz_mm]
+                        except Exception:
+                            pass
+                        _write_run_manifest(_run_snapshot_dir, _snapshots, placed_boxes=placed_boxes, run_ts=_run_ts)
+                    except Exception as _snap_exc:
+                        print(f"[SNAPSHOT WARN] place result save failed: {_snap_exc}")
+
                 held = None
                 print(f"[FLOW] placed_boxes count = {len(placed_boxes)}")
+                # Reuse the last overhead frame from the miss-check burst for the
+                # next survey so the overhead re-capture step can be skipped.
+                if miss_result is not None and not miss_result.is_miss:
+                    _survey_seed_oh[0] = miss_result.last_overhead_frame
                 i += 1
             except ClearBoxRequest:
                 handle_clear_box_request()
                 continuous_after_clear = True
                 i = 1
+                continue
+            except GoToSurveyRequest:
+                _GO_TO_SURVEY_EVENT.clear()
+                print("[G KEY] survey + J3 rehome requested.")
+                set_status([
+                    "G KEY: going to survey pose + rehome J3",
+                    "Robot is moving — keep clear.",
+                    "Run will resume after rehome.",
+                ])
+                try:
+                    _raise_or_hold_safe_z(robot, "[G KEY] raise", CLEAR_BOX_Z_MM, CLEAR_BOX_MOVE_TIME_S)
+                except Exception as _exc:
+                    print(f"[G KEY] WARN: raise failed: {_exc}")
+
+                try:
+                    _move_to_recovery_pose(robot)
+                except Exception as _exc:
+                    print(f"[G KEY] WARN: move to survey pose failed: {_exc}")
+
+                # Always attempt the J3 rehome regardless of move success.
+                try:
+                    ok = _rehome_j3_if_requested(robot)
+                    print(f"[G KEY] J3 rehome result={ok}")
+                except Exception as _exc:
+                    print(f"[G KEY] ERROR: J3 rehome threw: {_exc}")
+
+                print("[G KEY] done; resuming survey loop.")
                 continue
 
         if run_ok:
@@ -3191,10 +3849,12 @@ def main() -> int:
                 print(f"[FLOW] incomplete: placed {len(placed_boxes)}/{target_limit} objects")
                 run_ok = False
 
+        _write_run_manifest(_run_snapshot_dir, _snapshots, placed_boxes=placed_boxes, run_ts=_run_ts)
+
         set_status([
             f"DONE: placed {len(placed_boxes)} object(s)" if run_ok else f"STOPPED: placed {len(placed_boxes)} object(s)",
             "Check terminal for full candidate audit trail.",
-            "q=quit | c=clear box",
+            "q=quit | c=clear box | g=survey pose+rehome",
         ])
 
         if HOLD_WINDOW_AFTER_RUN:

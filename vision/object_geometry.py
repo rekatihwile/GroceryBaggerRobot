@@ -168,6 +168,60 @@ def estimate_pointcloud_footprint_cm(
     return float(width_mm / 10.0), float(depth_mm / 10.0)
 
 
+def estimate_pca_footprint_cm(
+    points_cam: np.ndarray,
+    bundle: Any,
+) -> tuple[float, float] | None:
+    """Estimate a tighter object footprint using PCA on robot-frame XY coordinates.
+
+    Returns (long_side_cm, short_side_cm) — the extents along the two principal
+    axes of the point cloud.  This is tighter than the axis-aligned span for
+    objects that are not aligned with the robot X/Y axes (e.g. a chip bag at 45°
+    gives an axis-aligned box ~41 % larger than necessary).
+    """
+    if points_cam is None or len(points_cam) < 20:
+        return None
+    try:
+        points_robot = cam_points_to_robot_xyz(points_cam, bundle)
+    except Exception:
+        return None
+
+    xy = np.column_stack([
+        np.asarray(points_robot[:, 0], dtype=np.float64),
+        np.asarray(points_robot[:, 1], dtype=np.float64),
+    ])
+    finite_mask = np.all(np.isfinite(xy), axis=1)
+    xy = xy[finite_mask]
+    if len(xy) < 20:
+        return None
+
+    # Clip outlier points before PCA so bad disparity pixels don't skew axes.
+    for col in range(2):
+        lo = float(np.percentile(xy[:, col], 3.0))
+        hi = float(np.percentile(xy[:, col], 97.0))
+        xy = xy[(xy[:, col] >= lo) & (xy[:, col] <= hi)]
+    if len(xy) < 20:
+        return None
+
+    center = np.mean(xy, axis=0)
+    cov = np.cov((xy - center).T)
+    if not np.all(np.isfinite(cov)):
+        return None
+
+    _, eigenvectors = np.linalg.eigh(cov)   # columns are eigenvectors, ascending order
+    eigenvectors = eigenvectors[:, ::-1]     # largest variance first
+
+    proj = (xy - center) @ eigenvectors
+    dim0 = float(np.percentile(proj[:, 0], 95.0)) - float(np.percentile(proj[:, 0], 5.0))
+    dim1 = float(np.percentile(proj[:, 1], 95.0)) - float(np.percentile(proj[:, 1], 5.0))
+
+    long_mm = max(dim0, dim1)
+    short_mm = min(dim0, dim1)
+    if long_mm <= 0.0 or short_mm <= 0.0:
+        return None
+    return float(long_mm / 10.0), float(short_mm / 10.0)
+
+
 def build_object_candidate(
     index: int,
     yolo_det: YOLODetection,
@@ -184,6 +238,7 @@ def build_object_candidate(
         points_cam, bundle
     )
     pointcloud_footprint_cm = estimate_pointcloud_footprint_cm(points_cam, bundle)
+    pca_footprint_cm = estimate_pca_footprint_cm(points_cam, bundle)
     if PICK_PHI_MODE == "triangulated_short_side":
         pick_phi, pick_phi_source = estimate_pick_phi_from_pointcloud_short_side(
             points_cam, bundle
@@ -245,8 +300,8 @@ def build_object_candidate(
         topdown_area_cm2=None,
         topdown_bbox_robot_xy_mm=None,
         topdown_aabb_cm=None,
-        topdown_oriented_rect_cm=None,
-        topdown_footprint_source=None,
+        topdown_oriented_rect_cm=pca_footprint_cm,
+        topdown_footprint_source="pca" if pca_footprint_cm is not None else None,
         pointcloud_height_cm=pointcloud_height_cm,
         pointcloud_height_robot_z_range_mm=pointcloud_height_range_mm,
         pointcloud_footprint_cm=pointcloud_footprint_cm,

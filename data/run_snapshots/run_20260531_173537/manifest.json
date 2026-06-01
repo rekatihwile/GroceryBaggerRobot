@@ -1,0 +1,399 @@
+{
+  "run_timestamp": "20260531_173537",
+  "script": "autonomous_missed_pick_recovery.py",
+  "place_planning_sequence": "bag_local_aabb_joint",
+  "objects": [
+    {
+      "object_i": 1,
+      "class_name": "Pringles",
+      "pick_xy_mm": [
+        289.0663362232077,
+        114.4003926099918
+      ],
+      "pick_z_mm": 58.272031484895145,
+      "pick_grasp_z_mm": 188.27203148489514,
+      "pick_phi_deg": 37.172922337007066,
+      "place_xy_mm": [
+        135.4772934733606,
+        732.0120848340016
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -155.0,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        289.0663362232077,
+        114.4003926099918,
+        58.272031484895145
+      ],
+      "raw_box_size_xyz_mm": [
+        65.95458694672115,
+        49.02416966800313,
+        101.34585344028312
+      ],
+      "padded_box_center_xyz_mm": [
+        135.4772934733606,
+        732.0120848340016,
+        -104.32707327985844
+      ],
+      "padded_box_size_xyz_mm": [
+        65.95458694672115,
+        49.02416966800313,
+        141.34585344028312
+      ],
+      "detection_class": "Pringles",
+      "detection_confidence": 0.99267578125,
+      "detection_bbox_xyxy": [
+        357.0,
+        6.5,
+        426.75,
+        118.8125
+      ],
+      "stereo_left": "Stereo_Left_0001.png",
+      "stereo_right": "Stereo_Right_0001.png",
+      "overhead": "Overhead_0001.png",
+      "disparity": "disparity_0001.npz",
+      "points_cam": "points_cam_0001.npz",
+      "left_overlay": "left_overlay_0001.png"
+    },
+    {
+      "object_i": 2,
+      "class_name": "Dove Deodorant",
+      "pick_xy_mm": [
+        282.74902312440975,
+        264.53608195080665
+      ],
+      "pick_z_mm": 77.22725411881478,
+      "pick_grasp_z_mm": 207.22725411881478,
+      "pick_phi_deg": 46.66067009950825,
+      "place_xy_mm": [
+        133.35354287503884,
+        717.2055083848799
+      ],
+      "place_phi_deg": 90.0,
+      "destination_surface_z_mm": -155.0,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        282.74902312440975,
+        264.53608195080665,
+        77.22725411881478
+      ],
+      "raw_box_size_xyz_mm": [
+        51.707085750077695,
+        19.41101676975962,
+        125.27349454973299
+      ],
+      "padded_box_center_xyz_mm": [
+        133.35354287503884,
+        717.2055083848799,
+        -92.3632527251335
+      ],
+      "padded_box_size_xyz_mm": [
+        51.707085750077695,
+        19.41101676975962,
+        165.273494549733
+      ],
+      "detection_class": "Dove Deodorant",
+      "detection_confidence": 0.97607421875,
+      "detection_bbox_xyxy": [
+        262.25,
+        45.6875,
+        321.75,
+        155.125
+      ],
+      "stereo_left": "Stereo_Left_0002.png",
+      "stereo_right": "Stereo_Right_0002.png",
+      "overhead": "Overhead_0002.png",
+      "disparity": "disparity_0002.npz",
+      "points_cam": "points_cam_0002.npz",
+      "left_overlay": "left_overlay_0002.png"
+    },
+    {
+      "object_i": 3,
+      "class_name": "Bandaid",
+      "pick_xy_mm": [
+        273.73100884329966,
+        118.5847906249245
+      ],
+      "pick_z_mm": 43.036686819959534,
+      "pick_grasp_z_mm": 173.03668681995953,
+      "pick_phi_deg": 148.4527449275076,
+      "place_xy_mm": [
+        259.97643296180956,
+        727.1262835315908
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -53.65414655971688,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        273.73100884329966,
+        118.5847906249245,
+        43.036686819959534
+      ],
+      "raw_box_size_xyz_mm": [
+        125.04713392361919,
+        39.252567063181694,
+        82.09021601492984
+      ],
+      "padded_box_center_xyz_mm": [
+        259.97643296180956,
+        727.1262835315908,
+        -12.60903855225196
+      ],
+      "padded_box_size_xyz_mm": [
+        125.04713392361919,
+        39.252567063181694,
+        122.09021601492984
+      ],
+      "detection_class": "Bandaid",
+      "detection_confidence": 0.8916015625,
+      "detection_bbox_xyxy": [
+        335.0,
+        31.4375,
+        460.5,
+        119.875
+      ],
+      "stereo_left": "Stereo_Left_0003.png",
+      "stereo_right": "Stereo_Right_0003.png",
+      "overhead": "Overhead_0003.png",
+      "disparity": "disparity_0003.npz",
+      "points_cam": "points_cam_0003.npz",
+      "left_overlay": "left_overlay_0003.png"
+    },
+    {
+      "object_i": 4,
+      "class_name": "Carmex Lip Balm",
+      "pick_xy_mm": [
+        171.98818947092803,
+        139.72880460562232
+      ],
+      "pick_z_mm": -29.17493202473837,
+      "pick_grasp_z_mm": 100.82506797526163,
+      "pick_phi_deg": 51.693432162255675,
+      "place_xy_mm": [
+        157.31228396008902,
+        772.9494512641268
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -53.65414655971688,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        171.98818947092803,
+        139.72880460562232,
+        -29.17493202473837
+      ],
+      "raw_box_size_xyz_mm": [
+        99.62456792017801,
+        59.101096528253606,
+        7.1323855366444455
+      ],
+      "padded_box_center_xyz_mm": [
+        157.31228396008902,
+        772.9494512641268,
+        -50.08795379139465
+      ],
+      "padded_box_size_xyz_mm": [
+        99.62456792017801,
+        59.101096528253606,
+        47.13238553664445
+      ],
+      "detection_class": "Carmex Lip Balm",
+      "detection_confidence": 0.9033203125,
+      "detection_bbox_xyxy": [
+        377.5,
+        110.0,
+        472.75,
+        182.25
+      ],
+      "stereo_left": "Stereo_Left_0004.png",
+      "stereo_right": "Stereo_Right_0004.png",
+      "overhead": "Overhead_0004.png",
+      "disparity": "disparity_0004.npz",
+      "points_cam": "points_cam_0004.npz",
+      "left_overlay": "left_overlay_0004.png"
+    },
+    {
+      "object_i": 5,
+      "class_name": "Lays Chips",
+      "pick_xy_mm": [
+        291.62945153736575,
+        430.55088793773245
+      ],
+      "pick_z_mm": -4.787527002590604,
+      "pick_grasp_z_mm": 125.21247299740939,
+      "pick_phi_deg": 7.989215567098398,
+      "place_xy_mm": [
+        157.31228396008902,
+        772.9494512641268
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -46.52176102307243,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        291.62945153736575,
+        430.55088793773245,
+        -4.787527002590604
+      ],
+      "raw_box_size_xyz_mm": [
+        169.17602798400168,
+        116.83124059823956,
+        30.606298248091814
+      ],
+      "padded_box_center_xyz_mm": [
+        157.31228396008902,
+        772.9494512641268,
+        -31.21861189902652
+      ],
+      "padded_box_size_xyz_mm": [
+        169.17602798400168,
+        116.83124059823956,
+        70.60629824809182
+      ],
+      "detection_class": "Lays Chips",
+      "detection_confidence": 0.9833984375,
+      "detection_bbox_xyxy": [
+        50.125,
+        99.875,
+        276.75,
+        272.0
+      ],
+      "stereo_left": "Stereo_Left_0005.png",
+      "stereo_right": "Stereo_Right_0005.png",
+      "overhead": "Overhead_0005.png",
+      "disparity": "disparity_0005.npz",
+      "points_cam": "points_cam_0005.npz",
+      "left_overlay": "left_overlay_0005.png"
+    },
+    {
+      "object_i": 6,
+      "class_name": "Chex Mix",
+      "pick_xy_mm": [
+        125.92988711471097,
+        327.72121884625426
+      ],
+      "pick_z_mm": -16.571760008750108,
+      "pick_grasp_z_mm": 113.4282399912499,
+      "pick_phi_deg": 179.1407564880473,
+      "place_xy_mm": [
+        259.97643296180956,
+        727.1262835315908
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": 28.43606945521296,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        125.92988711471097,
+        327.72121884625426,
+        -16.571760008750108
+      ],
+      "raw_box_size_xyz_mm": [
+        132.63203945463994,
+        99.13970497735264,
+        28.989873725550115
+      ],
+      "padded_box_center_xyz_mm": [
+        259.97643296180956,
+        727.1262835315908,
+        42.931006317988015
+      ],
+      "padded_box_size_xyz_mm": [
+        132.63203945463994,
+        99.13970497735264,
+        68.98987372555011
+      ],
+      "detection_class": "Chex Mix",
+      "detection_confidence": 0.9794921875,
+      "detection_bbox_xyxy": [
+        210.375,
+        183.375,
+        410.75,
+        330.5
+      ],
+      "stereo_left": "Stereo_Left_0006.png",
+      "stereo_right": "Stereo_Right_0006.png",
+      "overhead": "Overhead_0006.png",
+      "disparity": "disparity_0006.npz",
+      "points_cam": "points_cam_0006.npz",
+      "left_overlay": "left_overlay_0006.png"
+    }
+  ],
+  "placed_boxes": [
+    {
+      "center_xyz_mm": [
+        135.4772934733606,
+        732.0120848340016,
+        -104.32707327985844
+      ],
+      "size_xyz_mm": [
+        65.95458694672115,
+        49.02416966800313,
+        101.34585344028312
+      ],
+      "label": "object1_placed"
+    },
+    {
+      "center_xyz_mm": [
+        133.35354287503884,
+        717.2055083848799,
+        -92.3632527251335
+      ],
+      "size_xyz_mm": [
+        51.707085750077695,
+        19.41101676975962,
+        125.27349454973299
+      ],
+      "label": "object2_placed"
+    },
+    {
+      "center_xyz_mm": [
+        259.97643296180956,
+        727.1262835315908,
+        -12.60903855225196
+      ],
+      "size_xyz_mm": [
+        125.04713392361919,
+        39.252567063181694,
+        82.09021601492984
+      ],
+      "label": "object3_stacked"
+    },
+    {
+      "center_xyz_mm": [
+        157.31228396008902,
+        772.9494512641268,
+        -50.08795379139465
+      ],
+      "size_xyz_mm": [
+        99.62456792017801,
+        59.101096528253606,
+        7.1323855366444455
+      ],
+      "label": "object4_stacked"
+    },
+    {
+      "center_xyz_mm": [
+        157.31228396008902,
+        772.9494512641268,
+        -31.21861189902652
+      ],
+      "size_xyz_mm": [
+        169.17602798400168,
+        116.83124059823956,
+        30.606298248091814
+      ],
+      "label": "object5_stacked"
+    },
+    {
+      "center_xyz_mm": [
+        259.97643296180956,
+        727.1262835315908,
+        42.931006317988015
+      ],
+      "size_xyz_mm": [
+        132.63203945463994,
+        99.13970497735264,
+        28.989873725550115
+      ],
+      "label": "object6_stacked"
+    }
+  ]
+}

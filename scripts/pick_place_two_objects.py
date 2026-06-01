@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from motion.z_safety_config import (
+from config.motion.z_safety_config import (
     DEFAULT_Z_SAFETY,
     PLACE_RELEASE_GAP_MM as SHARED_PLACE_RELEASE_GAP_MM,
     print_z_safety_settings,
@@ -78,7 +78,7 @@ from scripts.pick_one_place_one import (
     _configure_modules,
     _confirm,
     get_use_z_ground_model_for_pick_surface,
-    _load_place_surface_zone,
+    _load_place_scene,
     preview_pick_grasp_z_with_and_without_zground,
     set_use_z_ground_model_for_pick_surface,
     execute_pick_selected,
@@ -296,7 +296,7 @@ def main() -> int:
     stereo = SimpleStereoCamera(STEREO_INDEX)
     robot = startup_robot()
 
-    surface_zone = _load_place_surface_zone()
+    surface_zone = _load_place_scene()
     surface_z = float(surface_zone["surface_z_mm"])
     base_xy = np.asarray(surface_zone["center_xy_mm"], dtype=np.float64).reshape(2)
     place_phi = float(surface_zone["default_phi_deg"])

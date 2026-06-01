@@ -1,0 +1,107 @@
+{
+  "run_timestamp": "20260531_154435",
+  "script": "autonomous_missed_pick_recovery.py",
+  "place_planning_sequence": "bag_local_aabb_joint",
+  "objects": [
+    {
+      "object_i": 1,
+      "class_name": "Dove Deodorant",
+      "pick_xy_mm": [
+        112.27912074792476,
+        154.50361516344873
+      ],
+      "pick_z_mm": -28.47734165687823,
+      "pick_grasp_z_mm": 101.52265834312178,
+      "pick_phi_deg": 2.0149617888026796,
+      "place_xy_mm": [
+        158.78587084992122,
+        732.9841482933131
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -155.0,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        112.27912074792476,
+        154.50361516344873,
+        -28.47734165687823
+      ],
+      "raw_box_size_xyz_mm": [
+        112.57174169984245,
+        50.968296586626224,
+        18.509714028453196
+      ],
+      "padded_box_center_xyz_mm": [
+        158.78587084992122,
+        732.9841482933131,
+        -145.7451429857734
+      ],
+      "padded_box_size_xyz_mm": [
+        112.57174169984245,
+        50.968296586626224,
+        58.509714028453196
+      ],
+      "detection_class": "Dove Deodorant",
+      "detection_confidence": 0.9716796875,
+      "detection_bbox_xyxy": [
+        379.5,
+        152.375,
+        496.25,
+        233.75
+      ],
+      "stereo_left": "Stereo_Left_0001.png",
+      "stereo_right": "Stereo_Right_0001.png",
+      "overhead": "Overhead_0001.png",
+      "disparity": "disparity_0001.npz",
+      "points_cam": "points_cam_0001.npz",
+      "left_overlay": "left_overlay_0001.png"
+    },
+    {
+      "object_i": 2,
+      "class_name": "Chex Mix",
+      "pick_xy_mm": [
+        234.23752817619652,
+        404.9851268749617
+      ],
+      "pick_z_mm": -21.31708535232056,
+      "pick_grasp_z_mm": 108.68291464767944,
+      "pick_phi_deg": 53.42936049218373,
+      "place_xy_mm": null,
+      "place_phi_deg": null,
+      "destination_surface_z_mm": null,
+      "place_result": "pending",
+      "raw_box_center_xyz_mm": null,
+      "raw_box_size_xyz_mm": null,
+      "padded_box_center_xyz_mm": null,
+      "padded_box_size_xyz_mm": null,
+      "detection_class": "Chex Mix",
+      "detection_confidence": 0.97802734375,
+      "detection_bbox_xyxy": [
+        124.3125,
+        145.5,
+        273.75,
+        292.25
+      ],
+      "stereo_left": "Stereo_Left_0002.png",
+      "stereo_right": "Stereo_Right_0002.png",
+      "overhead": "Overhead_0002.png",
+      "disparity": "disparity_0002.npz",
+      "points_cam": "points_cam_0002.npz",
+      "left_overlay": "left_overlay_0002.png"
+    }
+  ],
+  "placed_boxes": [
+    {
+      "center_xyz_mm": [
+        158.78587084992122,
+        732.9841482933131,
+        -145.7451429857734
+      ],
+      "size_xyz_mm": [
+        112.57174169984245,
+        50.968296586626224,
+        18.509714028453196
+      ],
+      "label": "object1_placed"
+    }
+  ]
+}

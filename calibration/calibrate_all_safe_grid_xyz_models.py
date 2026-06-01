@@ -140,14 +140,14 @@ SCAN_PRESETS = {
         "z": [DEFAULT_TRAVEL_Z_MM],
     },
     "global_coarse": {
-        "x": list(range(40, 380, 150)),
-        "y": list(range(40, 515, 100)),
+        "x": list(range(50, 380, 150)),
+        "y": list(range(50, 515, 100)),
         "z": list(range(0, 200, 50)),
     },
     "staging_refined": {
-        "x": list(range(40, 380, 100)),
-        "y": list(range(40, 515, 150)),
-        "z": [0, 50, 150,200],
+        "x": list(range(50, 380, 100)),
+        "y": list(range(50, 515, 150)),
+        "z": [0, 50, 150],
     },
     "local_dense": {
         "x": list(range(200, 401, 10)),
