@@ -35,7 +35,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-SAVE_OUTPUT_DIR = Path(__file__).resolve().parent
+# VS Code IDE defaults.
+# Copy/paste your image directory here (Windows raw string recommended), e.g.
+# r"C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images"
+IDE_DEFAULT_IMAGES_DIR_STR: str | None = r"C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\data\run_snapshots\run_20260531_165144"
+IDE_DEFAULT_IMAGES_DIR = Path(IDE_DEFAULT_IMAGES_DIR_STR) if IDE_DEFAULT_IMAGES_DIR_STR else (_REPO_ROOT / "Training_Images")
+
+# Optional explicit output override. None uses paper_figure_sources.
+IDE_DEFAULT_SAVE_OUTPUT_DIR_STR: str | None = None
+SAVE_OUTPUT_DIR = Path(IDE_DEFAULT_SAVE_OUTPUT_DIR_STR) if IDE_DEFAULT_SAVE_OUTPUT_DIR_STR else (_REPO_ROOT / "paper_figure_sources/global/diagnostics")
+
 PLACE_ZONE_DISPLAY_HEIGHT_MM = 250.0
 MAX_PTS_DISP = 4000
 USE_CUDA = True
@@ -79,6 +88,19 @@ from vision.pick_candidate_builder import CandidateDebug, SurveyState
 from vision.pick_survey_pipeline import load_vision
 from vision.stereo_rectifier import StereoRectifier
 from vision.torch_device import select_torch_device
+from config.workspace.workspace_config import get_workspace_filter_config, workspace_bounds_mm
+from scripts.capstone.publication_config import (
+    DEFAULT_PUBLICATION_DPI,
+    output_dir_for_images,
+    save_figure_bundle,
+)
+
+_WRAPPER_WORKSPACE_CFG = get_workspace_filter_config("wet_run")
+_WRAPPER_X_MIN, _WRAPPER_X_MAX, _WRAPPER_Y_MIN, _WRAPPER_Y_MAX = workspace_bounds_mm(_WRAPPER_WORKSPACE_CFG)
+_WRAPPER_MIN_VOLUME_MM3: float = 1.0
+_WRAPPER_MAX_VOLUME_MM3: float = 3_000_000.0
+_WRAPPER_GRIPPER_OFFSET_MM: float = 130.0
+_WRAPPER_Z_MAX_MM: float = 275.0
 
 GRIPPER_FINGER_LENGTH_MM = float(DEFAULT_GRIPPER_GEOMETRY.FINGER_LENGTH_MM)
 GRIPPER_FINGER_WIDTH_MM = float(DEFAULT_GRIPPER_GEOMETRY.FINGER_WIDTH_MM)
@@ -186,13 +208,32 @@ def _sample_point_colors_rgb(rect_left_bgr: np.ndarray, uv_px: np.ndarray) -> np
 
 def _build_scene_objects(survey: SurveyState, rect_left_bgr: np.ndarray, bundle: dict) -> list[SceneObject]:
     objects: list[SceneObject] = []
+    color_idx = 0
     for i, dbg in enumerate(survey.candidates, start=1):
         pts_cam = np.asarray(dbg.points_cam, dtype=np.float64).reshape(-1, 3)
         if len(pts_cam) == 0:
             continue
         pts_robot = cam_points_to_robot_xyz(pts_cam, bundle)
-        point_colors_rgb = _sample_point_colors_rgb(rect_left_bgr, np.asarray(dbg.point_uv_px, dtype=np.float64).reshape(-1, 2))
         raw_box = aabb_from_object_candidate(dbg.candidate, default_label=dbg.candidate.yolo.class_name)
+
+        # ── Apply robot-side candidate gates so the viewer shows only items the
+        #    robot would actually attempt to pick (no hardcoded coord hacks needed).
+        cand_xy = np.asarray(dbg.candidate.object_robot_xyz_raw[:2], dtype=np.float64)
+        if _WRAPPER_WORKSPACE_CFG.require_positive_platform_xy and (cand_xy[0] <= 0.0 or cand_xy[1] <= 0.0):
+            print(f"  [FILTER cand {i}] {dbg.candidate.yolo.class_name}: negative XY, robot would reject")
+            continue
+        if not (_WRAPPER_X_MIN <= cand_xy[0] <= _WRAPPER_X_MAX and _WRAPPER_Y_MIN <= cand_xy[1] <= _WRAPPER_Y_MAX):
+            print(f"  [FILTER cand {i}] {dbg.candidate.yolo.class_name}: outside workspace, robot would reject")
+            continue
+        vol = float(raw_box.size_xyz_mm[0]) * float(raw_box.size_xyz_mm[1]) * float(raw_box.size_xyz_mm[2])
+        if vol < _WRAPPER_MIN_VOLUME_MM3 or vol > _WRAPPER_MAX_VOLUME_MM3:
+            print(f"  [FILTER cand {i}] {dbg.candidate.yolo.class_name}: volume out of range, robot would reject")
+            continue
+        if float(raw_box.max_xyz_mm[2]) + _WRAPPER_GRIPPER_OFFSET_MM > _WRAPPER_Z_MAX_MM:
+            print(f"  [FILTER cand {i}] {dbg.candidate.yolo.class_name}: stereo phantom Z, robot would reject")
+            continue
+
+        point_colors_rgb = _sample_point_colors_rgb(rect_left_bgr, np.asarray(dbg.point_uv_px, dtype=np.float64).reshape(-1, 2))
         padded = make_aabb_from_min_max(
             raw_box.min_xyz_mm - np.array([float(DEFAULT_PLACE.PAD_X_MM), float(DEFAULT_PLACE.PAD_Y_MM), 0.0], dtype=np.float64),
             raw_box.max_xyz_mm + np.array([float(DEFAULT_PLACE.PAD_X_MM), float(DEFAULT_PLACE.PAD_Y_MM), 0.0], dtype=np.float64),
@@ -201,7 +242,7 @@ def _build_scene_objects(survey: SurveyState, rect_left_bgr: np.ndarray, bundle:
         objects.append(
             SceneObject(
                 label=str(dbg.candidate.yolo.class_name),
-                color=_PALETTE[(i - 1) % len(_PALETTE)],
+                color=_PALETTE[color_idx % len(_PALETTE)],
                 det_index=i,
                 candidate_debug=dbg,
                 points_robot=pts_robot,
@@ -210,6 +251,7 @@ def _build_scene_objects(survey: SurveyState, rect_left_bgr: np.ndarray, bundle:
                 padded_box=padded,
             )
         )
+        color_idx += 1
     return objects
 
 
@@ -1223,9 +1265,12 @@ class SystemViewer:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--images", default=str(_REPO_ROOT / "Training_Images"))
+    parser.add_argument("--images", default=str(IDE_DEFAULT_IMAGES_DIR))
     parser.add_argument("--index", type=int, default=None)
     parser.add_argument("--save", action="store_true")
+    parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument("--dpi", type=int, default=DEFAULT_PUBLICATION_DPI)
+    parser.add_argument("--annotated", action="store_true")
     parser.add_argument("--no-gui", action="store_true")
     parser.add_argument("--no-animate", action="store_true")
     parser.add_argument("--animate-step-delay", type=float, default=0.04)
@@ -1292,9 +1337,21 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.save:
-        out = SAVE_OUTPUT_DIR / f"autonomous_system_wrapper_{pair_index:04d}.png"
-        viewer.fig.savefig(str(out), dpi=120, bbox_inches="tight", facecolor=viewer.fig.get_facecolor())
-        print(f"[SAVE] {out}")
+        if not args.annotated:
+            viewer.fig.suptitle("")
+            for ax in viewer.fig.axes:
+                ax.set_title("")
+                for text in ax.texts:
+                    text.set_visible(False)
+        save_dir = output_dir_for_images(Path(args.images), args.out_dir) / "diagnostics"
+        outputs = save_figure_bundle(
+            viewer.fig,
+            save_dir / f"autonomous_system_overview_pair_{pair_index:04d}",
+            dpi=args.dpi,
+            facecolor=viewer.fig.get_facecolor(),
+        )
+        for path in outputs:
+            print(f"[SAVE] {path}")
 
     if args.no_gui:
         plt.close(viewer.fig)

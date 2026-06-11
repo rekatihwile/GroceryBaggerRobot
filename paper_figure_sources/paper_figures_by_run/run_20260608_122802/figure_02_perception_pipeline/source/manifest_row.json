@@ -1,0 +1,52 @@
+{
+  "object_i": 1,
+  "class_name": "Bandaid",
+  "pick_xy_mm": [
+    49.00331480891337,
+    197.99431107698967
+  ],
+  "pick_z_mm": 45.83854231535954,
+  "pick_grasp_z_mm": 173.33854231535955,
+  "pick_phi_deg": 30.651094546192184,
+  "place_xy_mm": [
+    145.37313105866605,
+    729.8492960298968
+  ],
+  "place_phi_deg": 0.0,
+  "destination_surface_z_mm": -155.0,
+  "place_result": "placed",
+  "raw_box_center_xyz_mm": [
+    49.00331480891337,
+    197.99431107698967,
+    45.83854231535954
+  ],
+  "raw_box_size_xyz_mm": [
+    110.74626211733211,
+    39.69859205979345,
+    86.63231922310985
+  ],
+  "padded_box_center_xyz_mm": [
+    145.37313105866605,
+    729.8492960298968,
+    -111.68384038844508
+  ],
+  "padded_box_size_xyz_mm": [
+    110.74626211733211,
+    39.69859205979345,
+    126.63231922310985
+  ],
+  "detection_class": "Bandaid",
+  "detection_confidence": 0.95361328125,
+  "detection_bbox_xyxy": [
+    405.25,
+    135.5,
+    516.0,
+    294.0
+  ],
+  "stereo_left": "Stereo_Left_0001.png",
+  "stereo_right": "Stereo_Right_0001.png",
+  "overhead": "Overhead_0001.png",
+  "disparity": "disparity_0001.npz",
+  "points_cam": "points_cam_0001.npz",
+  "left_overlay": "left_overlay_0001.png"
+}

@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from planning.aabb_utils import make_aabb_from_min_max
+from planning.aabb_utils import AxisAlignedBox3D, make_aabb_from_min_max
 from planning.bag_local_3d_aabb_planner import (
     FutureItemSpec,
     PlacementPlan3D,
@@ -15,6 +15,7 @@ from planning.bag_local_3d_aabb_planner import (
 
 BAG_LOCAL_AABB_JOINT = "bag_local_aabb_joint"
 VOLUME_TOPDOWN_SAFE = "volume_topdown_safe"
+FOUNDATION_FLOOR_FUTURE_AWARE = "foundation_floor_future_aware"
 
 # When every strict placement fails, retry with this XY/Z overflow tolerance (mm).
 # Items placed in desperate mode may extend slightly outside the bag boundary.
@@ -22,7 +23,11 @@ _DESPERATE_OVERFLOW_MM = 15.0
 AVAILABLE_PLANNING_SEQUENCES = (
     BAG_LOCAL_AABB_JOINT,
     VOLUME_TOPDOWN_SAFE,
+    FOUNDATION_FLOOR_FUTURE_AWARE,
 )
+
+_FOUNDATION_MIN_SUPPORT_RATIO = 0.20  # fraction of item footprint that must rest on something
+_FOUNDATION_SUPPORT_Z_TOL_MM = 2.0    # z-tolerance when finding supporting boxes
 
 
 @dataclass(frozen=True)
@@ -261,6 +266,127 @@ def _intersects_any(box: Any, boxes: list[Any]) -> bool:
     return False
 
 
+@dataclass
+class _FoundationPlacement:
+    is_floor: bool
+    layer_z_mm: float
+    yaw_deg: float
+    orientation_label: str
+    fit_clearance_mm: float
+    raw_box_local: AxisAlignedBox3D
+    padded_box_local: AxisAlignedBox3D
+
+
+def _foundation_support_ok(
+    raw_local: AxisAlignedBox3D,
+    placed_raw_boxes_local: list[Any],
+) -> bool:
+    """Return True if raw_local has adequate XY support from boxes directly below it."""
+    layer_z = float(raw_local.min_xyz_mm[2])
+    if abs(layer_z) <= 1e-6:
+        return True
+    item_area = max(1e-6, float(raw_local.size_xyz_mm[0]) * float(raw_local.size_xyz_mm[1]))
+    support_area = 0.0
+    for box in placed_raw_boxes_local:
+        if abs(float(box.max_xyz_mm[2]) - layer_z) > _FOUNDATION_SUPPORT_Z_TOL_MM:
+            continue
+        ox_min = max(float(raw_local.min_xyz_mm[0]), float(box.min_xyz_mm[0]))
+        ox_max = min(float(raw_local.max_xyz_mm[0]), float(box.max_xyz_mm[0]))
+        oy_min = max(float(raw_local.min_xyz_mm[1]), float(box.min_xyz_mm[1]))
+        oy_max = min(float(raw_local.max_xyz_mm[1]), float(box.max_xyz_mm[1]))
+        support_area += max(0.0, ox_max - ox_min) * max(0.0, oy_max - oy_min)
+    return (support_area / item_area) >= _FOUNDATION_MIN_SUPPORT_RATIO
+
+
+def _foundation_find_best_placement(
+    raw_box: AxisAlignedBox3D,
+    *,
+    ctx: PlanningSequenceContext,
+    placed_raw_boxes_local: list[Any],
+    placed_padded_boxes_local: list[Any],
+    bag_min_xyz: np.ndarray,
+    bag_size_xyz: np.ndarray,
+) -> _FoundationPlacement | None:
+    """Find the best bag-local placement for raw_box, preferring floor over stack."""
+    raw_size = np.asarray(raw_box.size_xyz_mm, dtype=np.float64).reshape(3)
+    pad = np.asarray(ctx.pad_xyz_mm, dtype=np.float64).reshape(3)
+
+    orientations: list[tuple[np.ndarray, float, str]] = [
+        (raw_size.copy(), 0.0, "yaw0")
+    ]
+    if abs(float(raw_size[0] - raw_size[1])) > max(5.0, 0.05 * max(float(raw_size[0]), float(raw_size[1]))):
+        orientations.append(
+            (np.array([raw_size[1], raw_size[0], raw_size[2]], dtype=np.float64), 90.0, "yaw90")
+        )
+
+    # (fit_clearance, yaw_deg, orientation_label, layer_z, raw_local, padded_box)
+    best_floor: tuple | None = None
+    best_stack: tuple | None = None
+
+    for oriented_size, yaw_deg, orientation_label in orientations:
+        padded_size = _padded_size(oriented_size, pad)
+        if padded_size[0] > bag_size_xyz[0] + 1e-6 or padded_size[1] > bag_size_xyz[1] + 1e-6:
+            continue
+
+        for layer_z in _safe_layer_z_values(
+            item_height_mm=float(padded_size[2]),
+            bag_height_mm=float(bag_size_xyz[2]),
+            placed_raw_boxes_local=placed_raw_boxes_local,
+        ):
+            is_floor = abs(float(layer_z)) <= 1e-6
+            xy_starts = _safe_xy_starts(
+                padded_size_xy_mm=padded_size[:2],
+                bag_size_xy_mm=bag_size_xyz[:2],
+                placed_padded_boxes_local=placed_padded_boxes_local,
+            )
+            for padded_min_x, padded_min_y in xy_starts:
+                padded_min = np.array([padded_min_x, padded_min_y, float(layer_z)], dtype=np.float64)
+                padded_box = make_aabb_from_min_max(
+                    padded_min,
+                    padded_min + padded_size,
+                    label="fnd_padded_local",
+                )
+                raw_min = padded_min + pad
+                raw_local = make_aabb_from_min_max(
+                    raw_min,
+                    raw_min + oriented_size,
+                    label="fnd_raw_local",
+                )
+                if padded_box.max_xyz_mm[2] > bag_size_xyz[2] + 1e-6:
+                    continue
+                if _intersects_any(padded_box, placed_padded_boxes_local):
+                    continue
+                if _intersects_any(raw_local, placed_raw_boxes_local):
+                    continue
+                if not is_floor and not _foundation_support_ok(raw_local, placed_raw_boxes_local):
+                    continue
+
+                fit_clearance = _box_xy_clearance_mm(padded_box, bag_size_xyz)
+                entry = (fit_clearance, yaw_deg, orientation_label, layer_z, raw_local, padded_box)
+
+                if is_floor:
+                    if best_floor is None or fit_clearance > best_floor[0]:
+                        best_floor = entry
+                else:
+                    if best_stack is None or fit_clearance > best_stack[0]:
+                        best_stack = entry
+
+    best = best_floor if best_floor is not None else best_stack
+    if best is None:
+        return None
+
+    fit_clearance, yaw_deg, orientation_label, layer_z, raw_local, padded_box = best
+    return _FoundationPlacement(
+        is_floor=(best is best_floor),
+        layer_z_mm=float(layer_z),
+        yaw_deg=float(yaw_deg),
+        orientation_label=str(orientation_label),
+        fit_clearance_mm=float(fit_clearance),
+        raw_box_local=raw_local,
+        padded_box_local=padded_box,
+    )
+
+
 def _compute_volume_topdown_safe_target(
     cand_dbg: Any,
     *,
@@ -465,6 +591,281 @@ def _compute_bag_local_target(
     )
 
 
+def _compute_foundation_floor_target(
+    cand_dbg: Any,
+    *,
+    ctx: PlanningSequenceContext,
+    runtime: PlanningRuntime,
+) -> SequenceTargetPlan:
+    raw_box = runtime.aabb_from_object_candidate(
+        cand_dbg.candidate,
+        default_label=f"object{ctx.object_i}_foundation",
+    )
+    bag_min_xyz, bag_size_xyz = _bag_local_frame(ctx)
+    placed_raw_boxes_local = [
+        _box_to_bag_local(box.raw_box, bag_min_xyz=bag_min_xyz, label=f"{box.raw_box.label}_local")
+        for box in ctx.placed_boxes
+    ]
+    placed_padded_boxes_local = [
+        _box_to_bag_local(box.padded_box, bag_min_xyz=bag_min_xyz, label=f"{box.padded_box.label}_local")
+        for box in ctx.placed_boxes
+    ]
+    placement = _foundation_find_best_placement(
+        raw_box,
+        ctx=ctx,
+        placed_raw_boxes_local=placed_raw_boxes_local,
+        placed_padded_boxes_local=placed_padded_boxes_local,
+        bag_min_xyz=bag_min_xyz,
+        bag_size_xyz=bag_size_xyz,
+    )
+    if placement is None:
+        raise RuntimeError(
+            f"foundation_floor_future_aware: no valid placement for "
+            f"{str(getattr(getattr(cand_dbg.candidate, 'yolo', None), 'class_name', None) or 'unknown')}"
+        )
+    target_center_xy = bag_min_xyz[:2] + np.asarray(
+        placement.raw_box_local.center_xyz_mm[:2], dtype=np.float64
+    )
+    target_phi = _normalize_phi_deg(float(ctx.base_phi_deg) + float(placement.yaw_deg))
+    return SequenceTargetPlan(
+        target_xy_mm=target_center_xy.copy(),
+        target_phi_deg=target_phi,
+        footprint_clearance_mm=float(placement.fit_clearance_mm),
+        aabb_clearance_mm=float(placement.fit_clearance_mm),
+        fit_clearance_mm=float(placement.fit_clearance_mm),
+        nudge_xy_mm=np.zeros(2, dtype=np.float64),
+        can_place=True,
+        reason=(
+            f"foundation_floor_future_aware: floor={placement.is_floor} "
+            f"yaw={placement.yaw_deg:.0f} z={placement.layer_z_mm:.1f}"
+        ),
+        planner_score=None,
+        planner_yaw_deg=float(placement.yaw_deg),
+        planner_layer_z_mm=float(placement.layer_z_mm),
+        future_placeable_count=None,
+        future_total_count=None,
+    )
+
+
+def _select_foundation_floor_future_aware(
+    state: Any,
+    *,
+    ctx: PlanningSequenceContext,
+    runtime: PlanningRuntime,
+) -> PlanningSelection:
+    from planning.grocery_properties import (
+        foundation_strength_score,
+        load_grocery_specs,
+        properties_for_class,
+    )
+
+    specs = load_grocery_specs()
+    result = runtime.choose_best_candidate(
+        state, config=ctx.config, robot=ctx.robot, placed_boxes=ctx.placed_boxes
+    )
+    result.print_debug("[BEST]")
+
+    overlay: dict[int, PlanningOverlayEntry] = {}
+    target_cache: dict[int, SequenceTargetPlan] = {}
+
+    if not getattr(state, "candidates", None):
+        return PlanningSelection(result=result, overlay=overlay, target_cache=target_cache)
+
+    bag_min_xyz, bag_size_xyz = _bag_local_frame(ctx)
+    placed_raw_boxes_local = [
+        _box_to_bag_local(box.raw_box, bag_min_xyz=bag_min_xyz, label=f"{box.raw_box.label}_local")
+        for box in ctx.placed_boxes
+    ]
+    placed_padded_boxes_local = [
+        _box_to_bag_local(box.padded_box, bag_min_xyz=bag_min_xyz, label=f"{box.padded_box.label}_local")
+        for box in ctx.placed_boxes
+    ]
+
+    # ── phase 1: compute placement for every base-passed candidate ──────────
+    # (idx, cand_dbg, decision, raw_box, placement, props, strength)
+    candidate_entries: list[tuple] = []
+    for idx, cand_dbg in enumerate(state.candidates):
+        decision = _decision_for_candidate(result, cand_dbg)
+        if decision is None or not bool(decision.passed):
+            reject_reason = "selector_rejected"
+            if decision is not None and getattr(decision, "reject_reasons", None):
+                reject_reason = ";".join(list(decision.reject_reasons[:2]))
+            overlay[idx] = PlanningOverlayEntry(False, None, None, None, reject_reason)
+            continue
+        try:
+            raw_box = runtime.aabb_from_object_candidate(
+                cand_dbg.candidate,
+                default_label=f"object{ctx.object_i}_foundation_{idx}",
+            )
+        except Exception as exc:
+            overlay[idx] = PlanningOverlayEntry(False, None, None, None, f"aabb_failed:{exc}")
+            continue
+
+        placement = _foundation_find_best_placement(
+            raw_box,
+            ctx=ctx,
+            placed_raw_boxes_local=placed_raw_boxes_local,
+            placed_padded_boxes_local=placed_padded_boxes_local,
+            bag_min_xyz=bag_min_xyz,
+            bag_size_xyz=bag_size_xyz,
+        )
+        if placement is None:
+            overlay[idx] = PlanningOverlayEntry(False, None, None, None, "no_valid_placement")
+            continue
+
+        class_name = str(
+            getattr(getattr(cand_dbg.candidate, "yolo", None), "class_name", None) or ""
+        )
+        props = properties_for_class(class_name, specs)
+        strength = foundation_strength_score(props)
+        candidate_entries.append((idx, cand_dbg, decision, raw_box, placement, props, strength))
+
+    # ── desperate fallback: nothing placed by foundation logic ──────────────
+    if not candidate_entries:
+        for idx, cand_dbg in enumerate(state.candidates):
+            decision = _decision_for_candidate(result, cand_dbg)
+            if decision is None or not bool(decision.passed):
+                continue
+            try:
+                target = _compute_volume_topdown_safe_target(
+                    cand_dbg, ctx=ctx, runtime=runtime, overflow_mm=_DESPERATE_OVERFLOW_MM
+                )
+                target_cache[idx] = target
+                overlay[idx] = PlanningOverlayEntry(
+                    can_place=True,
+                    target_xy_mm=target.target_xy_mm.copy(),
+                    target_phi_deg=float(target.target_phi_deg),
+                    clearance_mm=float(target.fit_clearance_mm),
+                    reason=f"desperate:{target.reason}",
+                )
+                result.selected = cand_dbg
+                result.selected_decision = decision
+                state.selected_index = state.candidates.index(cand_dbg)
+                print(f"[FOUNDATION PLAN] desperate fallback: cand[{idx}]")
+                break
+            except Exception:
+                pass
+        return PlanningSelection(result=result, overlay=overlay, target_cache=target_cache)
+
+    # ── phase 2: future feasibility for each candidate ──────────────────────
+    print("[FOUNDATION PLAN]")
+    scored: list[tuple] = []
+    for idx, cand_dbg, decision, raw_box, placement, props, strength in candidate_entries:
+        sim_raw = placed_raw_boxes_local + [placement.raw_box_local]
+        sim_padded = placed_padded_boxes_local + [placement.padded_box_local]
+
+        future_total = 0
+        future_floor_count = 0
+        future_any_count = 0
+        for other_idx, other_cand_dbg, _, other_raw_box, _, _, _ in candidate_entries:
+            if other_idx == idx:
+                continue
+            future_total += 1
+            other_p = _foundation_find_best_placement(
+                other_raw_box,
+                ctx=ctx,
+                placed_raw_boxes_local=sim_raw,
+                placed_padded_boxes_local=sim_padded,
+                bag_min_xyz=bag_min_xyz,
+                bag_size_xyz=bag_size_xyz,
+            )
+            if other_p is not None:
+                future_any_count += 1
+                if other_p.is_floor:
+                    future_floor_count += 1
+
+        future_stack_forced = future_any_count - future_floor_count
+        future_stranded = future_total - future_any_count
+
+        is_floor = int(placement.is_floor)
+        score_tuple = (
+            is_floor,
+            future_floor_count,
+            -future_stack_forced,
+            -future_stranded,
+            strength,
+            float(props.weight),
+            -float(props.fragility),
+            -float(props.compliance),
+            float(placement.fit_clearance_mm),
+            -idx,
+        )
+
+        target_center_xy = bag_min_xyz[:2] + np.asarray(
+            placement.raw_box_local.center_xyz_mm[:2], dtype=np.float64
+        )
+        target_phi = _normalize_phi_deg(float(ctx.base_phi_deg) + float(placement.yaw_deg))
+        target = SequenceTargetPlan(
+            target_xy_mm=target_center_xy.copy(),
+            target_phi_deg=target_phi,
+            footprint_clearance_mm=float(placement.fit_clearance_mm),
+            aabb_clearance_mm=float(placement.fit_clearance_mm),
+            fit_clearance_mm=float(placement.fit_clearance_mm),
+            nudge_xy_mm=np.zeros(2, dtype=np.float64),
+            can_place=True,
+            reason=(
+                f"foundation_floor_future_aware: floor={placement.is_floor} "
+                f"yaw={placement.yaw_deg:.0f} z={placement.layer_z_mm:.1f}"
+            ),
+            planner_score=float(strength),
+            planner_yaw_deg=float(placement.yaw_deg),
+            planner_layer_z_mm=float(placement.layer_z_mm),
+            future_placeable_count=int(future_any_count),
+            future_total_count=int(future_total),
+        )
+        target_cache[idx] = target
+        overlay[idx] = PlanningOverlayEntry(
+            can_place=True,
+            target_xy_mm=target_center_xy.copy(),
+            target_phi_deg=float(target_phi),
+            clearance_mm=float(placement.fit_clearance_mm),
+            reason=target.reason,
+        )
+
+        cand_class = str(
+            getattr(getattr(cand_dbg.candidate, "yolo", None), "class_name", None)
+            or f"cand[{idx}]"
+        )
+        print(
+            f"  cand[{idx}] {cand_class:16s} floor={placement.is_floor} "
+            f"target=({target_center_xy[0]:.1f},{target_center_xy[1]:.1f}) "
+            f"props=w{props.weight:.2f} frag{props.fragility:.2f} comp{props.compliance:.2f} "
+            f"floor_future={future_floor_count}/{future_total} "
+            f"stack_forced={future_stack_forced} stranded={future_stranded} "
+            f"strength={strength:.3f}"
+        )
+        scored.append((score_tuple, idx, cand_dbg, decision, target))
+
+    if not scored:
+        result.selected = None
+        result.selected_decision = None
+        return PlanningSelection(result=result, overlay=overlay, target_cache=target_cache)
+
+    any_floor = any(s[0][0] for s in scored)
+    scored.sort(reverse=True)
+
+    winner_score, winner_idx, winner_dbg, winner_decision, winner_target = scored[0]
+
+    for score_tuple, idx, cand_dbg, decision, target in scored[1:]:
+        cand_class = str(
+            getattr(getattr(cand_dbg.candidate, "yolo", None), "class_name", None)
+            or f"cand[{idx}]"
+        )
+        if any_floor and not score_tuple[0]:
+            print(f"  cand[{idx}] {cand_class:16s} -> rejected_as_winner: floor_options_exist")
+
+    winner_class = str(
+        getattr(getattr(winner_dbg.candidate, "yolo", None), "class_name", None)
+        or f"cand[{winner_idx}]"
+    )
+    print(f"SELECTED cand[{winner_idx}] {winner_class} reason=floor_first_future_aware")
+
+    result.selected = winner_dbg
+    result.selected_decision = winner_decision
+    state.selected_index = state.candidates.index(winner_dbg)
+    return PlanningSelection(result=result, overlay=overlay, target_cache=target_cache)
+
+
 def compute_candidate_place_target(
     sequence_name: str,
     cand_dbg: Any,
@@ -476,6 +877,8 @@ def compute_candidate_place_target(
     name = validate_planning_sequence_name(sequence_name)
     if name == VOLUME_TOPDOWN_SAFE:
         return _compute_volume_topdown_safe_target(cand_dbg, ctx=ctx, runtime=runtime)
+    if name == FOUNDATION_FLOOR_FUTURE_AWARE:
+        return _compute_foundation_floor_target(cand_dbg, ctx=ctx, runtime=runtime)
     return _compute_bag_local_target(cand_dbg, state=state, result=None, ctx=ctx, runtime=runtime)
 
 
@@ -705,4 +1108,6 @@ def select_candidate_for_state(
     name = validate_planning_sequence_name(sequence_name)
     if name == VOLUME_TOPDOWN_SAFE:
         return _select_volume_topdown_safe(state, ctx=ctx, runtime=runtime)
+    if name == FOUNDATION_FLOOR_FUTURE_AWARE:
+        return _select_foundation_floor_future_aware(state, ctx=ctx, runtime=runtime)
     return _select_bag_local_joint(state, ctx=ctx, runtime=runtime)

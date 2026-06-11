@@ -34,6 +34,7 @@ Outputs:
             left.jpg
             right.jpg
             yolo_overlay.jpg
+            yolo_overlay_highres.png
             disparity_heatmap.jpg
             disparity_raw.npy
             combined_segmented_pointcloud.ply
@@ -79,6 +80,7 @@ YOLO_IMGSZ = 960
 YOLO_CONF = 0.25
 YOLO_IOU = 0.50
 YOLO_RETINA_MASKS = True
+YOLO_OVERLAY_SAVE_SCALE = 2.0
 
 RAFT_VALID_ITERS = 16
 RAFT_MIXED_PRECISION = True
@@ -656,6 +658,30 @@ def save_disparity_heatmap(path: Path, disparity: np.ndarray) -> None:
     cv2.imwrite(str(path), heat)
 
 
+def save_highres_overlay_png(path: Path, overlay_bgr: np.ndarray, scale: float) -> None:
+    scale = float(scale)
+    if scale <= 0:
+        raise ValueError(f"Overlay save scale must be > 0, got {scale}")
+
+    if abs(scale - 1.0) < 1e-6:
+        overlay_to_save = overlay_bgr
+    else:
+        h, w = overlay_bgr.shape[:2]
+        out_w = max(1, int(round(w * scale)))
+        out_h = max(1, int(round(h * scale)))
+        overlay_to_save = cv2.resize(
+            overlay_bgr,
+            (out_w, out_h),
+            interpolation=cv2.INTER_CUBIC,
+        )
+
+    cv2.imwrite(str(path), overlay_to_save)
+    print(
+        f"[YOLO] Saved high-res overlay PNG: {path} "
+        f"({overlay_to_save.shape[1]}x{overlay_to_save.shape[0]})"
+    )
+
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -670,6 +696,12 @@ def main() -> None:
     parser.add_argument("--index", type=int, default=None, help="Specific #### index to use.")
     parser.add_argument("--conf", type=float, default=YOLO_CONF)
     parser.add_argument("--imgsz", type=int, default=YOLO_IMGSZ)
+    parser.add_argument(
+        "--overlay-scale",
+        type=float,
+        default=YOLO_OVERLAY_SAVE_SCALE,
+        help="Scale factor for saved YOLO overlay PNG. Can be > 1 for higher resolution.",
+    )
     parser.add_argument("--rectify-inputs", action="store_true", default=RECTIFY_INPUTS_DEFAULT)
     parser.add_argument("--max-points", type=int, default=MAX_POINTS_PER_INSTANCE)
     args = parser.parse_args()
@@ -733,6 +765,11 @@ def main() -> None:
         )
 
         cv2.imwrite(str(out_dir / "yolo_overlay.jpg"), overlay)
+        save_highres_overlay_png(
+            out_dir / "yolo_overlay_highres.png",
+            overlay_bgr=overlay,
+            scale=args.overlay_scale,
+        )
 
         raft = RAFTStereoRunner(
             raft_root=raft_root,
@@ -756,6 +793,7 @@ def main() -> None:
         summary_lines.append(f"Left image: {pair.left_path}")
         summary_lines.append(f"Right image: {pair.right_path}")
         summary_lines.append(f"YOLO weights: {weights_path}")
+        summary_lines.append(f"YOLO overlay PNG scale: {args.overlay_scale}")
         summary_lines.append(f"RAFT checkpoint: {raft_ckpt}")
         summary_lines.append(f"Stereo calibration: {calib_path}")
         summary_lines.append(f"Rectify inputs: {args.rectify_inputs}")

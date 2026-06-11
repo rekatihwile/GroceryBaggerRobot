@@ -1,0 +1,7 @@
+{
+  "point_count": 8375,
+  "sample_count": 8000,
+  "color_source": "calibrated_uv_reprojection_plus_stereo_left",
+  "rgb_embedded_in_npz": true,
+  "rgb_columns_in_csv": true
+}

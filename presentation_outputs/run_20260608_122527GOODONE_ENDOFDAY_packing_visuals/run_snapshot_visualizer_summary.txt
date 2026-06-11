@@ -1,0 +1,33 @@
+RUN SNAPSHOT VISUALIZER SUMMARY
+========================================
+manifest: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\data\run_snapshots\run_20260608_122527GOODONE_ENDOFDAY\manifest.json
+run_timestamp: 20260608_122527
+script: autonomous_missed_pick_recovery.py
+place_planning_sequence: foundation_floor_future_aware
+total manifest object rows: 5
+placed rows visualized: 5
+placed_boxes count in manifest: 5
+bag: New Bag Test
+bag source: config\surface_zones.json
+bag bounds x=[80.0,340.0] y=[690.0,820.0] z=[-175.0,75.0]
+
+Placed rows:
+  placement 01 manifest_row=01 object_i=1 class=Bandaid pointcloud=no
+  placement 02 manifest_row=02 object_i=2 class=Chex Mix pointcloud=no
+  placement 03 manifest_row=03 object_i=3 class=Burts Bees pointcloud=no
+  placement 04 manifest_row=04 object_i=4 class=Dove Deodorant pointcloud=no
+  placement 05 manifest_row=05 object_i=5 class=Pringles pointcloud=no
+
+Normalization notes:
+  row 1: raw AABB center normalized from pick pose (238.0,464.7) to placed pose (252.3,757.9)
+  row 2: raw AABB center normalized from pick pose (231.5,282.2) to placed pose (252.3,757.9)
+  row 3: raw AABB center normalized from pick pose (274.5,141.7) to placed pose (137.3,743.8)
+  row 4: raw AABB center normalized from pick pose (247.2,369.4) to placed pose (252.3,757.9)
+  row 5: raw AABB center normalized from pick pose (258.4,175.7) to placed pose (252.3,757.9)
+
+Skipped/audit rows:
+  none
+
+Outputs:
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260608_122527GOODONE_ENDOFDAY_packing_visuals\bag_aabb_topdown.png
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260608_122527GOODONE_ENDOFDAY_packing_visuals\bag_aabb_topdown.svg

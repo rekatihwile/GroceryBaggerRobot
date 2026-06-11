@@ -1,0 +1,74 @@
+{
+  "run_timestamp": "20260608_112524",
+  "script": "autonomous_missed_pick_recovery.py",
+  "place_planning_sequence": "foundation_floor_future_aware",
+  "objects": [
+    {
+      "object_i": 1,
+      "class_name": "Pringles",
+      "pick_xy_mm": [
+        129.3993457278295,
+        474.8571661462718
+      ],
+      "pick_z_mm": 56.54169291518212,
+      "pick_grasp_z_mm": 184.04169291518213,
+      "pick_phi_deg": 177.59370887515885,
+      "place_xy_mm": [
+        131.7331607226866,
+        728.2458720359688
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -155.0,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        129.3993457278295,
+        474.8571661462718,
+        56.54169291518212
+      ],
+      "raw_box_size_xyz_mm": [
+        63.46632144537322,
+        56.49174407193763,
+        91.97319681567336
+      ],
+      "padded_box_center_xyz_mm": [
+        131.7331607226866,
+        728.2458720359688,
+        -109.01340159216332
+      ],
+      "padded_box_size_xyz_mm": [
+        63.46632144537322,
+        56.49174407193763,
+        131.97319681567336
+      ],
+      "detection_class": "Pringles",
+      "detection_confidence": 0.98583984375,
+      "detection_bbox_xyxy": [
+        127.8125,
+        222.375,
+        240.25,
+        351.5
+      ],
+      "stereo_left": "Stereo_Left_0001.png",
+      "stereo_right": "Stereo_Right_0001.png",
+      "overhead": "Overhead_0001.png",
+      "disparity": "disparity_0001.npz",
+      "points_cam": "points_cam_0001.npz",
+      "left_overlay": "left_overlay_0001.png"
+    }
+  ],
+  "placed_boxes": [
+    {
+      "center_xyz_mm": [
+        131.7331607226866,
+        728.2458720359688,
+        -109.01340159216332
+      ],
+      "size_xyz_mm": [
+        63.46632144537322,
+        56.49174407193763,
+        91.97319681567336
+      ],
+      "label": "object1_placed"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+manifest_row,object_i,class_name,place_result,execution_classification,support_manifest_row,overlap_manifest_rows,inside_bag,target_x_mm,target_y_mm,destination_surface_z_mm,box_center_x_mm,box_center_y_mm,box_center_z_mm,box_size_x_mm,box_size_y_mm,box_size_z_mm
+1,1,Chex Mix,placed,manifest_executed_floor,,,True,257.9801564048676,756.6078805957252,-155.0,257.9801564048676,756.6078805957252,-138.92281881160633,124.03968680973519,93.21576119145028,32.154362376787326
+2,2,Bandaid,placed,manifest_executed_floor_with_aabb_overlap,,1,True,257.9801564048676,756.6078805957252,-155.0,257.9801564048676,756.6078805957252,-134.33051617421143,126.64051212515977,82.29630067893983,41.338967651577136
+3,3,Dove Deodorant,placed,manifest_executed_supported_stack,2,,True,156.3464438869445,741.08721400397,-113.66103234842285,156.3464438869445,741.08721400397,-105.29672233130196,112.69288777388903,51.25496800793986,16.72862003424177

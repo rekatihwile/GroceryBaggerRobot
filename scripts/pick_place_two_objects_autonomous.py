@@ -25,7 +25,7 @@ TARGET_OBJECT_COUNT = 10
 RUN_UNTIL_NO_VALID_CANDIDATE = False
 MAX_OBJECT_COUNT_SAFETY = 12
 NO_CANDIDATE_RETRY_COUNT = 1
-NO_CANDIDATE_RETRY_DELAY_S = 1.0
+NO_CANDIDATE_RETRY_DELAY_S = 0.1
 
 # Placement geometry. Object 1 goes at the saved zone center. Object 2 is adjacent.
 # Object 3 stacks above object 1, object 4 stacks above object 2, and so on.

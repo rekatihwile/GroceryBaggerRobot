@@ -1,0 +1,7 @@
+manifest_row,object_i,class_name,place_result,execution_classification,support_manifest_row,overlap_manifest_rows,inside_bag,target_x_mm,target_y_mm,destination_surface_z_mm,box_center_x_mm,box_center_y_mm,box_center_z_mm,box_size_x_mm,box_size_y_mm,box_size_z_mm
+1,1,Bandaid,placed,manifest_executed_floor,,,True,261.768833326405,753.4102045196221,-155.0,261.768833326405,753.4102045196221,-138.35089335552922,116.46233265281006,86.82040903924413,33.29821328894154
+2,2,Lays Chips,placed,manifest_executed_floor_with_aabb_overlap_with_boundary_overflow,,1,False,210.0,755.0,-155.0,210.0,755.0,-98.20088567829517,357.85842838870815,181.47639401564254,113.59822864340967
+3,3,Burts Bees,placed,manifest_executed_supported_stack,2,,True,210.0,755.0,-41.40177135659033,210.0,755.0,-33.115703490418824,77.19050581068721,62.19724656279278,16.57213573234302
+4,4,Pringles,placed,manifest_executed_supported_stack,3,,True,210.0,755.0,-24.829635624247313,210.0,755.0,22.37790732287363,60.36030846449148,51.562785937151894,94.41508589424188
+5,5,Dove Deodorant,placed,manifest_executed_supported_stack,4,,True,210.0,755.0,69.58545026999457,210.0,755.0,76.34883248734069,110.33588803504614,50.195366213885364,13.52676443469224
+6,6,Chex Mix,placed,manifest_executed_supported_stack_with_boundary_overflow,5,,False,210.0,755.0,83.1122147046868,210.0,755.0,94.78020630876851,138.50594168681025,93.53499734837365,23.335983208163405

@@ -1,0 +1,6 @@
+manifest_row,object_i,class_name,place_result,execution_classification,support_manifest_row,overlap_manifest_rows,inside_bag,target_x_mm,target_y_mm,destination_surface_z_mm,box_center_x_mm,box_center_y_mm,box_center_z_mm,box_size_x_mm,box_size_y_mm,box_size_z_mm
+1,1,Pringles,placed,manifest_executed_floor,,,True,130.9469911043471,784.3100812768992,-155.0,130.9469911043471,784.3100812768992,-101.04849903709184,61.89398220869419,51.379836553798384,107.90300192581631
+2,2,Bandaid,placed,manifest_executed_floor,,,True,221.68718673533718,754.8974629858399,-155.0,221.68718673533718,754.8974629858399,-143.75499376198394,119.58640947067435,90.2050739716797,22.49001247603212
+3,3,Dove Deodorant,miss,not_placed:miss,,,,221.68718673533718,754.8974629858399,-132.50998752396788,,,,,,
+4,4,Dove Deodorant,placed,manifest_executed_unmodeled_fallback,,,True,221.68718673533718,754.8974629858399,-114.0395128520197,221.68718673533718,754.8974629858399,-104.76047483205105,106.08491454501983,54.234496218294,18.558076039937298
+5,5,Burts Bees,pending,not_placed:pending,,,,,,,,,,,,

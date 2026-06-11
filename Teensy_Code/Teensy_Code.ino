@@ -73,7 +73,7 @@
     #define J4_STEP 11
     #define J4_DIR  12
     #define J4_EN   13
-
+    
     #define SERVO_PIN 14
 
     #define J1_LIMIT_PIN 15
@@ -134,14 +134,14 @@
     // NORMAL MOTION SETTINGS
     // ----------------------------------------
 
-    const float J1_NORMAL_MAX_SPEED = 50000.0;
-    const float J1_NORMAL_ACCEL     = 7000.0;
+    const float J1_NORMAL_MAX_SPEED = 10000.0;
+    const float J1_NORMAL_ACCEL     = 20000.0;
 
-    const float J2_NORMAL_MAX_SPEED = 50000.0;
-    const float J2_NORMAL_ACCEL     = 7000.0;
+    const float J2_NORMAL_MAX_SPEED = 10000.0;
+    const float J2_NORMAL_ACCEL     = 20000.0;
 
-    const float J3_NORMAL_MAX_SPEED = 10000.0;
-    const float J3_NORMAL_ACCEL     = 10000.0;
+    const float J3_NORMAL_MAX_SPEED = 50000.0;
+    const float J3_NORMAL_ACCEL     = 15000.0;
 
     const float J4_NORMAL_MAX_SPEED = 40000.0;
     const float J4_NORMAL_ACCEL     = 1000.0;

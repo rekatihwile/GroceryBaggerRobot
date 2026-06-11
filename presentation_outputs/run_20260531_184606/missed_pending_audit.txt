@@ -1,0 +1,4 @@
+MISSED/PENDING/SKIPPED MANIFEST ROWS
+========================================
+manifest_row=1 object_i=1 class=Dove Deodorant result='miss' reason=place_result=miss
+manifest_row=9 object_i=1 class=Chex Mix result='pending' reason=place_result=pending

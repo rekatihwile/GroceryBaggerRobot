@@ -1,0 +1,33 @@
+{
+  "object_i": 2,
+  "class_name": "Burts Bees",
+  "pick_xy_mm": [
+    156.4449360716421,
+    79.83159398785521
+  ],
+  "pick_z_mm": 51.43396768272023,
+  "pick_grasp_z_mm": 196.43396768272024,
+  "pick_phi_deg": 8.51003719377195,
+  "place_xy_mm": null,
+  "place_phi_deg": null,
+  "destination_surface_z_mm": null,
+  "place_result": "pending",
+  "raw_box_center_xyz_mm": null,
+  "raw_box_size_xyz_mm": null,
+  "padded_box_center_xyz_mm": null,
+  "padded_box_size_xyz_mm": null,
+  "detection_class": "Burts Bees",
+  "detection_confidence": 0.91796875,
+  "detection_bbox_xyxy": [
+    444.5,
+    116.375,
+    504.5,
+    164.0
+  ],
+  "stereo_left": "Stereo_Left_0002.png",
+  "stereo_right": "Stereo_Right_0002.png",
+  "overhead": "Overhead_0002.png",
+  "disparity": "disparity_0002.npz",
+  "points_cam": "points_cam_0002.npz",
+  "left_overlay": "left_overlay_0002.png"
+}

@@ -40,7 +40,7 @@ class SurveyConfig:
     USE_HALF: bool = True
 
     # ── RAFT-Stereo disparity ────────────────────────────────────────────
-    RAFT_VALID_ITERS: int =16
+    RAFT_VALID_ITERS: int =8
     RAFT_DOWNSCALE: float = 1.0
     RAFT_MIXED_PRECISION: bool = True
     MIN_DISPARITY_PX: float = 1.0
@@ -51,11 +51,19 @@ class SurveyConfig:
     # ── Burst tracking ───────────────────────────────────────────────────
     # How many stereo frames to grab per survey; a candidate must appear in
     # at least MIN_BURST_HITS frames to survive the cluster filter.
-    BURST_COUNT: int = 5
-    MIN_BURST_HITS: int = 5
+    BURST_COUNT: int = 2
+    MIN_BURST_HITS: int = 1
     BURST_FRAME_DELAY_S: float = 0.05
     BURST_CLUSTER_MAX_CENTROID_PX: float = 75.0
     BURST_REQUIRE_SAME_CLASS: bool = True
+
+    # ── Stereo camera pre-flush (speed knob) ─────────────────────────────────
+    # DirectShow (CAP_DSHOW) buffers frames while idle.  During miss-check and
+    # place descent the stereo stream is not drained, so the first frames of the
+    # next survey burst may be stale.  Discard this many frames (with a short
+    # sleep between each) before starting the YOLO burst.  Set to 0 to disable.
+    STEREO_BURST_PREFRESH_COUNT: int = 4
+    STEREO_BURST_PREFRESH_DELAY_S: float = 0.01
 
     # ── Overhead camera ──────────────────────────────────────────────────
     # Discard this many queued overhead frames before the survey reads one;

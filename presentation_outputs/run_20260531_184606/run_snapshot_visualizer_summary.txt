@@ -1,0 +1,46 @@
+RUN SNAPSHOT VISUALIZER SUMMARY
+========================================
+manifest: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\data\run_snapshots\run_20260531_184606\manifest.json
+run_timestamp: 20260531_184606
+script: autonomous_missed_pick_recovery.py
+place_planning_sequence: bag_local_aabb_joint
+total manifest object rows: 11
+placed rows visualized: 9
+placed_boxes count in manifest: 2
+bag: New Bag Test
+bag source: config\surface_zones.json
+bag bounds x=[80.0,340.0] y=[680.0,830.0] z=[-175.0,84.2]
+
+Placed rows:
+  placement 01 manifest_row=02 object_i=2 class=Bandaid pointcloud=no
+  placement 02 manifest_row=03 object_i=3 class=Chex Mix pointcloud=no
+  placement 03 manifest_row=04 object_i=4 class=Lays Chips pointcloud=no
+  placement 04 manifest_row=05 object_i=5 class=Burts Bees pointcloud=no
+  placement 05 manifest_row=06 object_i=6 class=Carmex Lip Balm pointcloud=no
+  placement 06 manifest_row=07 object_i=7 class=Pringles pointcloud=no
+  placement 07 manifest_row=08 object_i=8 class=Chex Mix pointcloud=no
+  placement 08 manifest_row=10 object_i=1 class=Chex Mix pointcloud=no
+  placement 09 manifest_row=11 object_i=2 class=Bandaid pointcloud=no
+
+Normalization notes:
+  row 2: raw AABB center normalized from pick pose (235.8,193.4) to placed pose (163.1,742.4)
+  row 3: raw AABB center normalized from pick pose (151.9,345.0) to placed pose (163.1,742.4)
+  row 4: raw AABB center normalized from pick pose (245.8,140.1) to placed pose (163.1,742.4)
+  row 5: raw AABB center normalized from pick pose (186.9,399.3) to placed pose (285.4,780.7)
+  row 6: raw AABB center normalized from pick pose (300.7,313.4) to placed pose (163.1,742.4)
+  row 7: raw AABB center normalized from pick pose (117.6,395.3) to placed pose (163.1,742.4)
+  row 8: raw AABB center normalized from pick pose (220.0,260.6) to placed pose (139.7,789.6)
+  row 10: raw AABB center normalized from pick pose (109.7,272.6) to placed pose (253.0,748.8)
+  row 11: raw AABB center normalized from pick pose (133.0,449.6) to placed pose (144.6,739.6)
+
+Skipped/audit rows:
+  manifest_row=1 object_i=1 class=Dove Deodorant result='miss' reason=place_result=miss
+  manifest_row=9 object_i=1 class=Chex Mix result='pending' reason=place_result=pending
+
+Outputs:
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260531_184606\bag_aabb_topdown.png
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260531_184606\bag_aabb_topdown.svg
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260531_184606\bag_aabb_3d.png
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260531_184606\bag_aabb_3d.svg
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260531_184606\bag_aabb_sequence.gif
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260531_184606\bag_aabb_descent.gif

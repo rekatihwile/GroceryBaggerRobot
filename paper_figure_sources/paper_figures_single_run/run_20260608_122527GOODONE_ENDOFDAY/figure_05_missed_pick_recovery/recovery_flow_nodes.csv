@@ -1,0 +1,8 @@
+node_id,x,y,width,height,label
+survey,0.05,0.68,0.13,0.16,Survey
+select,0.24,0.68,0.16,0.16,Select + plan
+pick,0.46,0.68,0.11,0.16,Pick
+watchdog,0.63,0.68,0.22,0.16,Continuity check
+place,0.65,0.25,0.2,0.16,Release + update
+recover,0.27,0.25,0.25,0.16,"Cancel release
+Rehome Z + retry"

@@ -1,0 +1,2 @@
+manifest_row,object_i,class_name,place_result,execution_classification,support_manifest_row,overlap_manifest_rows,inside_bag,target_x_mm,target_y_mm,destination_surface_z_mm,box_center_x_mm,box_center_y_mm,box_center_z_mm,box_size_x_mm,box_size_y_mm,box_size_z_mm
+1,1,Burts Bees,placed,manifest_executed_floor,,,True,285.2735249028427,771.210732955583,-155.0,285.2735249028427,771.210732955583,-148.61617707667406,69.45294980568542,57.578533911166076,12.767645846651853

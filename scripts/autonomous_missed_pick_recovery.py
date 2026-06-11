@@ -32,18 +32,21 @@ from config.motion.z_safety_config import (  # noqa: E402
     validate_z_command,
 )
 
-# General run control.  Set RUN_UNTIL_NO_VALID_CANDIDATE=True for a feeder loop.
-TARGET_OBJECT_COUNT = 10
-RUN_UNTIL_NO_VALID_CANDIDATE = False
-MAX_OBJECT_COUNT_SAFETY = 12
-REQUIRE_CONFIRM_BEFORE_REAL_MOTION = False
-NO_CANDIDATE_RETRY_COUNT = 1
-NO_CANDIDATE_RETRY_DELAY_S = 1.0
-NO_CANDIDATE_AFTER_RETRIES_MODE = "continuous"  # "continuous", "wait_for_resume", or "stop"
-NO_CANDIDATE_RESUME_KEY = "r"
-# When no candidate is found and continuous mode re-surveys, move to the survey/home
-# pose first so the arm is out of the camera's view.
-NO_CANDIDATE_RECOVERY_MOVE_ENABLED = True
+from config.run.run_config import DEFAULT_RUN as _RUN_CFG  # noqa: E402
+from config.run.miss_check_config import DEFAULT_MISS_CHECK as _MISS_CFG  # noqa: E402
+from config.run.recovery_config import DEFAULT_RECOVERY as _RECOVERY_CFG  # noqa: E402
+from config.survey.survey_config import DEFAULT_SURVEY as _SURVEY_CFG  # noqa: E402
+
+# General run control.  Edit defaults in config/run/run_config.py.
+TARGET_OBJECT_COUNT = int(_RUN_CFG.TARGET_OBJECT_COUNT)
+RUN_UNTIL_NO_VALID_CANDIDATE = bool(_RUN_CFG.RUN_UNTIL_NO_VALID_CANDIDATE)
+MAX_OBJECT_COUNT_SAFETY = int(_RUN_CFG.MAX_OBJECT_COUNT_SAFETY)
+REQUIRE_CONFIRM_BEFORE_REAL_MOTION = bool(_RUN_CFG.REQUIRE_CONFIRM_BEFORE_REAL_MOTION)
+NO_CANDIDATE_RETRY_COUNT = int(_RUN_CFG.NO_CANDIDATE_RETRY_COUNT)
+NO_CANDIDATE_RETRY_DELAY_S = float(_RUN_CFG.NO_CANDIDATE_RETRY_DELAY_S)
+NO_CANDIDATE_AFTER_RETRIES_MODE = str(_RUN_CFG.NO_CANDIDATE_AFTER_RETRIES_MODE)
+NO_CANDIDATE_RESUME_KEY = str(_RUN_CFG.NO_CANDIDATE_RESUME_KEY)
+NO_CANDIDATE_RECOVERY_MOVE_ENABLED = bool(_RUN_CFG.NO_CANDIDATE_RECOVERY_MOVE_ENABLED)
 
 # Placement geometry and packing fit.
 # Lower PAD_X_MM / PAD_Y_MM / PAD_Z_MM to make packing tighter across all objects.
@@ -58,30 +61,56 @@ PLACE_PLANNING_SEQUENCE_NAME = str(
     )
 ).strip().lower()
 PLACE_BAG_LOCAL_HEIGHT_MM = float(getattr(DEFAULT_PLACE, "PLACE_BAG_LOCAL_HEIGHT_MM", 250.0))
-RUN_LOG_PATH = Path("autonomous_missed_pick_recovery_last_run.txt")
+RUN_LOG_PATH = Path(_RUN_CFG.RUN_LOG_PATH)
+from config.motion.platform_clearance_config import DEFAULT_PLATFORM_CLEARANCE as _PC_CFG  # noqa: E402
 
 # ── Platform task-space obstacle avoidance ────────────────────────────────────
 # Before each pick the script checks how close the target XY is to every other
 # candidate on the platform.  If another item is within the SKIP threshold the
 # candidate is dropped (gripper would definitely collide on descent).  If within
 # the WARN threshold it proceeds but prints a warning.
-PLATFORM_OBSTACLE_AVOIDANCE_ENABLED: bool = True
-PLATFORM_OBSTACLE_SKIP_MM: float = 22.0   # gripper half-width; collide on descent
-PLATFORM_OBSTACLE_WARN_MM: float = 50.0   # close enough to note
+PLATFORM_OBSTACLE_AVOIDANCE_ENABLED: bool = bool(_PC_CFG.OBSTACLE_AVOIDANCE_ENABLED)
+PLATFORM_OBSTACLE_SKIP_MM: float = float(_PC_CFG.OBSTACLE_SKIP_MM)
+PLATFORM_OBSTACLE_WARN_MM: float = float(_PC_CFG.OBSTACLE_WARN_MM)
+
+# ── Safe pick→hover travel-path clearance ──────────────────────────────────────
+# After a successful pick the arm travels at Z_MAX from the pick XY to the bag
+# hover position.  If remaining platform items are tall enough that the held
+# item's bottom would clip them, the robot detours via a perpendicular bypass
+# waypoint.  Set TRAVEL_CLEARANCE_ENABLED=False to restore the old straight-line
+# travel (legacy behaviour).
+TRAVEL_CLEARANCE_ENABLED: bool = bool(_PC_CFG.TRAVEL_CLEARANCE_ENABLED)
+TRAVEL_CLEARANCE_MARGIN_Z_MM: float = float(_PC_CFG.TRAVEL_CLEARANCE_MARGIN_Z_MM)
+TRAVEL_GRIPPER_HALF_WIDTH_MM: float = float(_PC_CFG.TRAVEL_GRIPPER_HALF_WIDTH_MM)
+TRAVEL_CLEARANCE_MARGIN_XY_MM: float = float(_PC_CFG.TRAVEL_CLEARANCE_MARGIN_XY_MM)
+TRAVEL_BYPASS_X_MARGIN_MM: float = float(_PC_CFG.TRAVEL_BYPASS_X_MARGIN_MM)
+
+# ── Intercept-and-clear mode ────────────────────────────────────────────────────
+# "off"   — legacy: skip the candidate when another item is too close (default).
+# "clear" — pick the blocking item first, move it to a free platform spot, then
+#            pick the original target.  Only active when
+#            PLATFORM_OBSTACLE_AVOIDANCE_ENABLED is also True.
+INTERCEPT_MODE: str = str(_PC_CFG.INTERCEPT_MODE)
+INTERCEPT_GRIPPER_HALF_WIDTH_MM: float = float(_PC_CFG.INTERCEPT_GRIPPER_HALF_WIDTH_MM)
+INTERCEPT_GRIPPER_HALF_DEPTH_MM: float = float(_PC_CFG.INTERCEPT_GRIPPER_HALF_DEPTH_MM)
+INTERCEPT_MARGIN_MM: float = float(_PC_CFG.INTERCEPT_MARGIN_MM)
+INTERCEPT_TEMP_SPOT_CLEAR_RADIUS_MM: float = float(_PC_CFG.INTERCEPT_TEMP_SPOT_CLEAR_RADIUS_MM)
+INTERCEPT_TEMP_SPOT_GRID_STEP_MM: float = float(_PC_CFG.INTERCEPT_TEMP_SPOT_GRID_STEP_MM)
+INTERCEPT_TEMP_PLACE_Z_MARGIN_MM: float = float(_PC_CFG.INTERCEPT_TEMP_PLACE_Z_MARGIN_MM)
 
 # ── No-candidate recovery: move arm before retry survey ───────────────────────
 # When the first survey finds no valid pick candidates, move the arm to the
 # survey pose before retrying.  This clears the arm out of the camera view so
 # it cannot occlude the platform during re-survey.
-SURVEY_CLEAR_ON_NO_CANDIDATE: bool = True
+SURVEY_CLEAR_ON_NO_CANDIDATE: bool = bool(_RUN_CFG.SURVEY_CLEAR_ON_NO_CANDIDATE)
 
 # ── Run snapshot / post-processing save ──────────────────────────────────────
 # Each run saves stereo pairs, overhead frames, disparity, and a manifest JSON
 # under data/run_snapshots/run_<timestamp>/.  The stereo pairs are named
 # Stereo_Left_NNNN.png / Stereo_Right_NNNN.png so autonomous_system_wrapper.py
 # can be pointed at the directory with --images.
-SAVE_RUN_SNAPSHOT = True
-RUN_SNAPSHOT_BASE_DIR: Path = REPO_ROOT / "data" / "run_snapshots"
+SAVE_RUN_SNAPSHOT = bool(_RUN_CFG.SAVE_RUN_SNAPSHOT)
+RUN_SNAPSHOT_BASE_DIR: Path = REPO_ROOT / _RUN_CFG.RUN_SNAPSHOT_BASE_DIR
 _RUNTIME_CONTEXT = resolve_runtime_context("wet_run")
 _WORKSPACE = get_workspace_filter_config(resolve_workspace_profile_name(_RUNTIME_CONTEXT.workspace_profile_name))
 # Efficient packing chooses the best object for the next slot by fit first, then volume.
@@ -100,19 +129,20 @@ PLACE_GRIPPER_FOOTPRINT_DEFAULT_SERVO_DEG = float(DEFAULT_PLACE.PLACE_GRIPPER_FO
 PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE = bool(DEFAULT_PLACE.PLACE_OPTIMIZE_ROTATION_FOR_EDGE_CLEARANCE)
 PLACE_ROTATION_CANDIDATE_OFFSETS_DEG = [float(v) for v in DEFAULT_PLACE.PLACE_ROTATION_CANDIDATE_OFFSETS_DEG]
 
-# Autonomous survey timing. The next survey is submitted right before the place
-# descent move, so capture begins while the robot is lowering to release.
-PREFETCH_NEXT_SURVEY_ON_PLACE_DESCENT = True
-PREFETCH_PLACE_DESCENT_DELAY_S = 0.0
-SELECTION_DISPLAY_HOLD_S = 0.25
-HOLD_WINDOW_AFTER_RUN = True
-CLEAR_BOX_Z_MM = 275.0
-CLEAR_BOX_MOVE_TIME_S = 1.25
+# Autonomous survey timing and display.  Edit defaults in config/run/run_config.py.
+PREFETCH_NEXT_SURVEY_ON_PLACE_DESCENT = bool(_RUN_CFG.PREFETCH_NEXT_SURVEY_ON_PLACE_DESCENT)
+PREFETCH_PLACE_DESCENT_DELAY_S = float(_RUN_CFG.PREFETCH_PLACE_DESCENT_DELAY_S)
+SELECTION_DISPLAY_HOLD_S = float(_RUN_CFG.SELECTION_DISPLAY_HOLD_S)
+HOLD_WINDOW_AFTER_RUN = bool(_RUN_CFG.HOLD_WINDOW_AFTER_RUN)
+CLEAR_BOX_Z_MM = float(_RUN_CFG.CLEAR_BOX_Z_MM)
+CLEAR_BOX_MOVE_TIME_S = float(_RUN_CFG.CLEAR_BOX_MOVE_TIME_S)
+PROFILE_SURVEY_TIMING = bool(_RUN_CFG.PROFILE_SURVEY_TIMING)
 
-# Overhead camera freshness. If the overhead view looks stale/phantom, increase
-# discard frames. This is applied immediately before overhead YOLO matching.
-OVERHEAD_FRESH_READ_DISCARD_FRAMES = 6
-OVERHEAD_FRESH_READ_DELAY_S = 0.02
+# Camera freshness.  Edit defaults in config/survey/survey_config.py.
+OVERHEAD_FRESH_READ_DISCARD_FRAMES = int(_SURVEY_CFG.OVERHEAD_FRESH_READ_DISCARD_FRAMES)
+OVERHEAD_FRESH_READ_DELAY_S = float(_SURVEY_CFG.OVERHEAD_FRESH_READ_DELAY_S)
+STEREO_BURST_PREFRESH_COUNT = int(_SURVEY_CFG.STEREO_BURST_PREFRESH_COUNT)
+STEREO_BURST_PREFRESH_DELAY_S = float(_SURVEY_CFG.STEREO_BURST_PREFRESH_DELAY_S)
 
 # Platform footprint.  Keep this aligned with
 # calibration/calibrate_all_safe_grid_xyz_models.py SCAN_PRESETS["staging_refined"].
@@ -124,50 +154,42 @@ PLATFORM_X_MAX_MM = float(max(PLATFORM_GRID_X_MM))
 PLATFORM_Y_MIN_MM = float(min(PLATFORM_GRID_Y_MM))
 PLATFORM_Y_MAX_MM = float(max(PLATFORM_GRID_Y_MM))
 
-# Missed-pick YOLO watchdog.  This is deliberately cheap: YOLO burst first,
-# RAFT/pointcloud only after this watchdog says the object is probably still
-# at the pick site.
-MISS_CHECK_ENABLED = True
-MISS_CHECK_CAMERA = "overhead"  # "overhead" is easiest to compare to the original pick-site detection.
-MISS_BURST_COUNT = 8
-MISS_MIN_HITS = 3
-MISS_CHECK_TIMEOUT_S = 4.0
-MISS_CHECK_PERIOD_S = 0.15
-MISS_CONFIRM_AT_PLACE_HOVER_ONLY = True
-MISS_MATCH_MAX_ROBOT_DIST_MM = 35.0
-MISS_MATCH_MIN_IOU = 0.20
-MISS_MATCH_AREA_RATIO_MIN = 0.50
-MISS_MATCH_AREA_RATIO_MAX = 2.00
-MISS_SCORE_THRESHOLD = 0.65
-MISS_CLASS_WEIGHT = 0.25
-MISS_ROBOT_DIST_WEIGHT = 0.35
-MISS_IOU_WEIGHT = 0.20
-MISS_AREA_WEIGHT = 0.20
+# Miss-check watchdog.  Edit defaults in config/run/miss_check_config.py.
+MISS_CHECK_ENABLED = bool(_MISS_CFG.MISS_CHECK_ENABLED)
+MISS_CHECK_CAMERA = str(_MISS_CFG.MISS_CHECK_CAMERA)
+MISS_BURST_COUNT = int(_MISS_CFG.MISS_BURST_COUNT)
+MISS_MIN_HITS = int(_MISS_CFG.MISS_MIN_HITS)
+MISS_CHECK_TIMEOUT_S = float(_MISS_CFG.MISS_CHECK_TIMEOUT_S)
+MISS_CHECK_PERIOD_S = float(_MISS_CFG.MISS_CHECK_PERIOD_S)
+MISS_CONFIRM_AT_PLACE_HOVER_ONLY = bool(_MISS_CFG.MISS_CONFIRM_AT_PLACE_HOVER_ONLY)
+MISS_MATCH_MAX_ROBOT_DIST_MM = float(_MISS_CFG.MISS_MATCH_MAX_ROBOT_DIST_MM)
+MISS_MATCH_MIN_IOU = float(_MISS_CFG.MISS_MATCH_MIN_IOU)
+MISS_MATCH_AREA_RATIO_MIN = float(_MISS_CFG.MISS_MATCH_AREA_RATIO_MIN)
+MISS_MATCH_AREA_RATIO_MAX = float(_MISS_CFG.MISS_MATCH_AREA_RATIO_MAX)
+MISS_SCORE_THRESHOLD = float(_MISS_CFG.MISS_SCORE_THRESHOLD)
+MISS_CLASS_WEIGHT = float(_MISS_CFG.MISS_CLASS_WEIGHT)
+MISS_ROBOT_DIST_WEIGHT = float(_MISS_CFG.MISS_ROBOT_DIST_WEIGHT)
+MISS_IOU_WEIGHT = float(_MISS_CFG.MISS_IOU_WEIGHT)
+MISS_AREA_WEIGHT = float(_MISS_CFG.MISS_AREA_WEIGHT)
 
-# Recovery pose / J3 rehome.  The recovery move is validated with the shared Z
-# safety policy before any motion is sent.  XYZ is loaded from
-# scripts/pick_one_place_one.py's survey pose so survey and HOMEJ3 recovery use
-# the same physical staging pose.
-RECOVERY_POSE_X_MM = None
-RECOVERY_POSE_Y_MM = None
-RECOVERY_POSE_Z_MM = None
-RECOVERY_POSE_PHI_DEG = 0.0
-RECOVERY_MOVE_TIME_S = 1.50
-RECOVERY_REHOME_J3_ENABLED = True
-RECOVERY_DROP_Z_BEFORE_REHOME_MM = None
-RECOVERY_REHOME_TIMEOUT_S = 120.0
-
-# Retry grasp.  A retry uses the same pick machinery with a copied candidate,
-# a higher/saner grasp target, and a wider starting claw.
-MAX_PICK_RETRIES_PER_OBJECT = 1
-RETRY_SAFE_PICK_ENABLED = True
-RETRY_GRASP_Z_OFFSET_MM = 10.0
-RETRY_START_CLAW_EXTRA_DEG = 8.0
-RETRY_START_CLAW_MAX_DEG = 80.0
-RETRY_XY_SAME_THRESHOLD_MM = 15.0
-RETRY_FORCE_SAFE_SEQUENCE_IF_SAME_XY = True
-RETRY_RELOCALIZE_WITH_RAFT_ONLY_AFTER_MISS = True
-ON_RETRY_FAIL = "stop"  # "stop" or "skip"
+# Recovery pose and retry.  Edit defaults in config/run/recovery_config.py.
+RECOVERY_POSE_X_MM = _RECOVERY_CFG.RECOVERY_POSE_X_MM
+RECOVERY_POSE_Y_MM = _RECOVERY_CFG.RECOVERY_POSE_Y_MM
+RECOVERY_POSE_Z_MM = _RECOVERY_CFG.RECOVERY_POSE_Z_MM
+RECOVERY_POSE_PHI_DEG = float(_RECOVERY_CFG.RECOVERY_POSE_PHI_DEG)
+RECOVERY_MOVE_TIME_S = float(_RECOVERY_CFG.RECOVERY_MOVE_TIME_S)
+RECOVERY_REHOME_J3_ENABLED = bool(_RECOVERY_CFG.RECOVERY_REHOME_J3_ENABLED)
+RECOVERY_DROP_Z_BEFORE_REHOME_MM = _RECOVERY_CFG.RECOVERY_DROP_Z_BEFORE_REHOME_MM
+RECOVERY_REHOME_TIMEOUT_S = float(_RECOVERY_CFG.RECOVERY_REHOME_TIMEOUT_S)
+MAX_PICK_RETRIES_PER_OBJECT = int(_RECOVERY_CFG.MAX_PICK_RETRIES_PER_OBJECT)
+RETRY_SAFE_PICK_ENABLED = bool(_RECOVERY_CFG.RETRY_SAFE_PICK_ENABLED)
+RETRY_GRASP_Z_OFFSET_MM = float(_RECOVERY_CFG.RETRY_GRASP_Z_OFFSET_MM)
+RETRY_START_CLAW_EXTRA_DEG = float(_RECOVERY_CFG.RETRY_START_CLAW_EXTRA_DEG)
+RETRY_START_CLAW_MAX_DEG = float(_RECOVERY_CFG.RETRY_START_CLAW_MAX_DEG)
+RETRY_XY_SAME_THRESHOLD_MM = float(_RECOVERY_CFG.RETRY_XY_SAME_THRESHOLD_MM)
+RETRY_FORCE_SAFE_SEQUENCE_IF_SAME_XY = bool(_RECOVERY_CFG.RETRY_FORCE_SAFE_SEQUENCE_IF_SAME_XY)
+RETRY_RELOCALIZE_WITH_RAFT_ONLY_AFTER_MISS = bool(_RECOVERY_CFG.RETRY_RELOCALIZE_WITH_RAFT_ONLY_AFTER_MISS)
+ON_RETRY_FAIL = str(_RECOVERY_CFG.ON_RETRY_FAIL)
 
 # Best-candidate filters. These are intentionally conservative and easy to tune.
 BEST_REQUIRE_POSITIVE_PLATFORM_XY = bool(_WORKSPACE.require_positive_platform_xy)
@@ -231,6 +253,7 @@ import io
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 import math
+import re
 import threading
 import time
 import traceback
@@ -248,6 +271,7 @@ from motion.pick_place_sequence import (
     _move_checked as _sequence_move_checked,
 )
 from planning.autonomous_planning_sequences import (
+    FOUNDATION_FLOOR_FUTURE_AWARE,
     PlanningSequenceContext,
     PlanningRuntime,
     compute_candidate_place_target as compute_sequence_place_target,
@@ -286,6 +310,7 @@ from vision.pick_candidate_builder import CandidateDebug, SurveyState
 from vision.pick_xy_resolver import project_overhead_centroid_to_robot_xy
 from vision.pick_survey_pipeline import load_vision, run_survey
 import vision.pick_survey_pipeline as _survey_pipeline_mod
+import vision.burst_tracking as _burst_tracking_mod
 from vision.stereo_rectifier import StereoRectifier
 from vision.torch_device import select_torch_device
 from vision.yolo_segmenter import YOLODetection
@@ -550,6 +575,16 @@ class OptimizedPlaceTarget:
     support_top_z_mm: float | None = None
 
 
+@dataclass
+class PickObstacleAssessment:
+    ok_to_pick: bool
+    warnings: list[str]
+    min_centroid_distance_mm: float
+    min_blocker_separation_mm: float
+    max_blocker_overlap_mm: float
+    blocker_count: int
+
+
 def _planning_runtime() -> PlanningRuntime:
     return PlanningRuntime(
         choose_best_candidate=choose_best_candidate,
@@ -779,7 +814,275 @@ def _check_pick_for_platform_obstacles(
             warnings.append(
                 f"[OBSTACLE] WARN: {name} centre {dist:.0f} mm from pick target"
             )
+
+    # AABB + gripper footprint check — catches items that are far centroid-to-centroid
+    # but close edge-to-edge (e.g. a wide item adjacent to the target where the gripper
+    # would clip the neighbouring item's body even though centroids are 100+ mm apart).
+    # Skip candidates whose AABB volume exceeds the absurd-volume threshold — those are
+    # mis-detections of the platform/background (e.g. the cardboard tray detected as a
+    # giant bag of chips) and should not block real picks.
+    _aabb_vol_limit_mm3 = float(BEST_MAX_VOLUME_CM3) * 1000.0
+    if not collide:
+        from motion.intercept_recovery import check_for_pick_interceptors
+        target_phi = float(target_dbg.candidate.pick_phi_deg or 0.0)
+        other_aabbs = []
+        for other in survey_state.candidates:
+            if other is target_dbg:
+                continue
+            try:
+                aabb = _aabb_from_object_candidate_quiet(other.candidate, _candidate_class_name(other))
+            except Exception:
+                continue
+            if aabb is None:
+                continue
+            sz = aabb.size_xyz_mm
+            aabb_vol = float(sz[0]) * float(sz[1]) * float(sz[2])
+            if aabb_vol > _aabb_vol_limit_mm3:
+                continue  # Platform / background mis-detection — not a real obstacle
+            other_aabbs.append((
+                str(aabb.label),
+                int(getattr(other.candidate, "index", -1)),
+                aabb.center_xyz_mm,
+                aabb.size_xyz_mm,
+            ))
+        if other_aabbs:
+            blockers = check_for_pick_interceptors(
+                target_xy,
+                target_phi,
+                other_aabbs,
+                gripper_half_width_mm=float(INTERCEPT_GRIPPER_HALF_WIDTH_MM),
+                gripper_half_depth_mm=float(INTERCEPT_GRIPPER_HALF_DEPTH_MM),
+                intercept_margin_mm=float(INTERCEPT_MARGIN_MM),
+            )
+            for b in blockers:
+                warnings.append(
+                    f"[OBSTACLE] SKIP (AABB): {b.blocker_label} gripper overlap={b.overlap_mm:.0f} mm "
+                    f"sep={b.separation_mm:.0f} mm — gripper footprint would clip on descent"
+                )
+                collide = True
+
     return not collide, warnings
+
+
+def _blocked_candidate_clearance_key(
+    cand_dbg: CandidateDebug,
+    warnings: list[str],
+) -> tuple[float, float, float, float, int]:
+    max_overlap_mm = 0.0
+    min_sep_mm = float("inf")
+    min_centroid_mm = float("inf")
+
+    for warning in warnings:
+        overlap_match = re.search(r"overlap=([0-9]+(?:\\.[0-9]+)?)", warning)
+        sep_match = re.search(r"sep=([0-9]+(?:\\.[0-9]+)?)", warning)
+        centre_match = re.search(r"centre\\s+([0-9]+(?:\\.[0-9]+)?)\\s+mm", warning)
+        if overlap_match:
+            max_overlap_mm = max(max_overlap_mm, float(overlap_match.group(1)))
+        if sep_match:
+            min_sep_mm = min(min_sep_mm, float(sep_match.group(1)))
+        if centre_match:
+            min_centroid_mm = min(min_centroid_mm, float(centre_match.group(1)))
+
+    sep_score = min_sep_mm if np.isfinite(min_sep_mm) else min_centroid_mm
+    if not np.isfinite(sep_score):
+        sep_score = -1.0
+    centroid_score = min_centroid_mm if np.isfinite(min_centroid_mm) else -1.0
+
+    candidate = cand_dbg.candidate
+    conf = float(getattr(getattr(candidate, "yolo", None), "confidence", 0.0) or 0.0)
+    points = int(getattr(candidate, "valid_point_count", 0) or 0)
+    return (-max_overlap_mm, sep_score, centroid_score, conf, points)
+
+
+def _allow_clearance_fallback_candidate(cand_dbg: CandidateDebug) -> bool:
+    candidate = cand_dbg.candidate
+    xy = _candidate_target_xy(cand_dbg)
+    if not np.all(np.isfinite(xy)):
+        return False
+    x_mm = float(xy[0])
+    y_mm = float(xy[1])
+    if x_mm < float(PLATFORM_X_MIN_MM) or x_mm > float(PLATFORM_X_MAX_MM):
+        return False
+    if y_mm < float(PLATFORM_Y_MIN_MM) or y_mm > float(PLATFORM_Y_MAX_MM):
+        return False
+    try:
+        aabb = _aabb_from_object_candidate_quiet(candidate, _candidate_class_name(cand_dbg))
+    except Exception:
+        return False
+    if aabb is None:
+        return False
+    size_xyz_mm = np.asarray(aabb.size_xyz_mm, dtype=np.float64).reshape(3)
+    if not np.all(np.isfinite(size_xyz_mm)):
+        return False
+    volume_mm3 = float(size_xyz_mm[0]) * float(size_xyz_mm[1]) * float(size_xyz_mm[2])
+    if volume_mm3 > float(BEST_MAX_VOLUME_CM3) * 1000.0:
+        return False
+    return True
+
+
+def _execute_intercept_clear(
+    robot,
+    target_dbg: CandidateDebug,
+    survey_state: SurveyState | None,
+    bundle: dict,
+) -> bool:
+    """Pick the closest blocking item and place it at a free temp spot.
+
+    Called when INTERCEPT_MODE == "clear" and the obstacle check fires.
+    Returns True if the blocker was successfully relocated so the caller can
+    retry picking the original target.  On any failure, returns False and the
+    caller should fall back to skipping the candidate.
+    """
+    if survey_state is None or not survey_state.candidates:
+        return False
+
+    target_xy = _candidate_target_xy(target_dbg)
+    target_phi = float(target_dbg.candidate.pick_phi_deg or 0.0)
+
+    # Prefer the AABB-based blocker list (same check that fired the obstacle gate).
+    from motion.intercept_recovery import check_for_pick_interceptors as _cfi
+    other_aabbs = []
+    aabb_by_index: dict[int, CandidateDebug] = {}
+    for other in survey_state.candidates:
+        if other is target_dbg:
+            continue
+        try:
+            aabb = _aabb_from_object_candidate_quiet(other.candidate, _candidate_class_name(other))
+        except Exception:
+            continue
+        if aabb is None:
+            continue
+        sz = aabb.size_xyz_mm
+        if float(sz[0]) * float(sz[1]) * float(sz[2]) > float(BEST_MAX_VOLUME_CM3) * 1000.0:
+            continue  # Platform mis-detection — not a real blocker
+        idx = int(getattr(other.candidate, "index", -1))
+        other_aabbs.append((str(aabb.label), idx, aabb.center_xyz_mm, aabb.size_xyz_mm))
+        aabb_by_index[idx] = other
+
+    blocker_dbg: CandidateDebug | None = None
+    best_dist = float("inf")
+
+    if other_aabbs:
+        blockers = _cfi(
+            target_xy, target_phi, other_aabbs,
+            gripper_half_width_mm=float(INTERCEPT_GRIPPER_HALF_WIDTH_MM),
+            gripper_half_depth_mm=float(INTERCEPT_GRIPPER_HALF_DEPTH_MM),
+            intercept_margin_mm=float(INTERCEPT_MARGIN_MM),
+        )
+        if blockers:
+            # Pick the worst overlapper (sorted descending by overlap_mm).
+            b = blockers[0]
+            blocker_dbg = aabb_by_index.get(b.blocker_index)
+            if blocker_dbg is not None:
+                best_dist = b.separation_mm
+
+    # Fallback: centroid proximity search (catches items with no AABB data).
+    if blocker_dbg is None:
+        for other in survey_state.candidates:
+            if other is target_dbg:
+                continue
+            dist = float(np.linalg.norm(target_xy - _candidate_target_xy(other)))
+            if dist < best_dist:
+                best_dist = dist
+                blocker_dbg = other
+
+    if blocker_dbg is None:
+        print("[INTERCEPT] could not identify a specific blocker; skipping intercept")
+        return False
+
+    blocker_label = _candidate_class_name(blocker_dbg)
+    print(
+        f"[INTERCEPT] blocker={blocker_label!r} dist={best_dist:.1f} mm; "
+        "picking it first to clear the target zone"
+    )
+
+    blocker_aabb = _aabb_from_object_candidate_quiet(blocker_dbg.candidate, blocker_label)
+    blocker_height = float(blocker_aabb.size_xyz_mm[2])
+    blocker_bottom_z = float(blocker_aabb.center_xyz_mm[2] - blocker_aabb.size_xyz_mm[2] / 2.0)
+
+    # Intercept picks don't require overhead XY — we just need to grab the blocker
+    # and move it out of the way; stereo XY is precise enough for that.
+    _orig_require_overhead = _pick_one_mod.REQUIRE_OVERHEAD_XY_FOR_PICK
+    _pick_one_mod.REQUIRE_OVERHEAD_XY_FOR_PICK = False
+    try:
+        _intercept_pick_ok = execute_pick_selected(robot, blocker_dbg, bundle=bundle)
+    finally:
+        _pick_one_mod.REQUIRE_OVERHEAD_XY_FOR_PICK = _orig_require_overhead
+    if not _intercept_pick_ok:
+        print(f"[INTERCEPT] failed to pick blocker {blocker_label!r}; aborting intercept")
+        return False
+
+    # Find a free spot on the platform, avoiding all remaining candidates.
+    occupied = [
+        np.asarray(_candidate_target_xy(d), dtype=np.float64)
+        for d in survey_state.candidates
+        if d is not blocker_dbg
+    ]
+    from motion.intercept_recovery import find_temporary_platform_spot, compute_platform_place_z_mm
+    temp_spot = find_temporary_platform_spot(
+        occupied,
+        platform_x_range_mm=(PLATFORM_X_MIN_MM, PLATFORM_X_MAX_MM),
+        platform_y_range_mm=(PLATFORM_Y_MIN_MM, PLATFORM_Y_MAX_MM),
+        clear_radius_mm=INTERCEPT_TEMP_SPOT_CLEAR_RADIUS_MM,
+        grid_step_mm=INTERCEPT_TEMP_SPOT_GRID_STEP_MM,
+    )
+
+    if temp_spot is None:
+        print("[INTERCEPT] no free temp spot found; releasing blocker at current arm position")
+        from motion.pick_place_sequence import _command_servo_angle as _srv
+        _srv(robot, float(CLAW_OPEN_DEG))
+        return False
+
+    print(
+        f"[INTERCEPT] temp spot xy=({temp_spot.xy_mm[0]:.1f},{temp_spot.xy_mm[1]:.1f}) "
+        f"clearance={temp_spot.min_clearance_mm:.1f} mm"
+    )
+
+    _z_max = float(Z_MAX_MM)
+    _gripper_off = float(getattr(_pick_one_mod, "GRIPPER_OFFSET_MM", DEFAULT_Z_SAFETY.GRIPPER_OFFSET_MM))
+
+    if not _sequence_move_checked(
+        robot, "[INTERCEPT] move to temp spot",
+        x_mm=float(temp_spot.xy_mm[0]),
+        y_mm=float(temp_spot.xy_mm[1]),
+        z_mm=_z_max,
+        move_time_s=float(XY_MOVE_TIME_S),
+    ):
+        print("[INTERCEPT] failed to move to temp spot; releasing in place")
+        from motion.pick_place_sequence import _command_servo_angle as _srv
+        _srv(robot, float(CLAW_OPEN_DEG))
+        return False
+
+    place_z = compute_platform_place_z_mm(
+        blocker_bottom_z_mm=blocker_bottom_z,
+        blocker_height_mm=blocker_height,
+        gripper_offset_mm=_gripper_off,
+        z_margin_mm=INTERCEPT_TEMP_PLACE_Z_MARGIN_MM,
+        z_max_mm=_z_max,
+    )
+    print(f"[INTERCEPT] lowering to Z={place_z:.1f} mm to set down {blocker_label!r}")
+    _sequence_move_checked(
+        robot, "[INTERCEPT] lower to place",
+        z_mm=place_z,
+        move_time_s=float(PLACE_Z_MOVE_TIME_S),
+    )
+
+    from motion.pick_place_sequence import _command_servo_angle as _srv
+    _srv(robot, float(CLAW_OPEN_DEG))
+
+    _sequence_move_checked(
+        robot, "[INTERCEPT] retract after temp place",
+        z_mm=_z_max,
+        move_time_s=float(COARSE_MOVE_TIME_S),
+    )
+
+    blocker_idx = int(getattr(blocker_dbg.candidate, "index", -1))
+    survey_state.candidates = [
+        d for d in survey_state.candidates
+        if int(getattr(d.candidate, "index", -1)) != blocker_idx
+    ]
+    print(f"[INTERCEPT] {blocker_label!r} relocated; proceeding to pick original target")
+    return True
 
 
 def _bbox_area_px(bbox_xyxy: tuple[float, float, float, float] | None) -> float | None:
@@ -2484,9 +2787,50 @@ def _select_best_for_state(
     config: BestCandidateConfig,
 ) -> BestCandidateResult:
     result = choose_best_candidate(state, config=config, robot=robot, placed_boxes=placed_boxes)
+    result = _apply_platform_ground_truth_fallback(result, state=state)
     result.print_debug("[BEST]")
     if result.selected is not None:
         state.selected_index = state.candidates.index(result.selected)
+    return result
+
+
+def _apply_platform_ground_truth_fallback(
+    result: BestCandidateResult,
+    *,
+    state: SurveyState,
+) -> BestCandidateResult:
+    if result.selected is not None:
+        return result
+
+    oversized_only: list[Any] = []
+    for decision in getattr(result, "decisions", []):
+        reasons = list(getattr(decision, "reject_reasons", []) or [])
+        if not reasons:
+            continue
+        if all(str(reason).startswith("volume_absurdly_large:") for reason in reasons):
+            oversized_only.append(decision)
+
+    if not oversized_only:
+        return result
+
+    fallback = max(
+        oversized_only,
+        key=lambda d: (
+            float(getattr(d, "volume_mm3", 0.0)),
+            float(getattr(getattr(getattr(d, "dbg", None), "candidate", None), "valid_point_count", 0)),
+            float(getattr(getattr(getattr(getattr(d, "dbg", None), "candidate", None), "yolo", None), "confidence", 0.0)),
+            int(getattr(d, "candidate_index", -1)),
+        ),
+    )
+    fallback.passed = True
+    fallback.notes.append("platform_ground_truth_fallback")
+    result.selected = fallback.dbg
+    result.selected_decision = fallback
+    state.selected_index = state.candidates.index(fallback.dbg)
+    print(
+        "[PLAN] no candidate passed only because of absurd volume; "
+        f"falling back to on-platform ground truth pick #{fallback.candidate_index} {fallback.class_name}."
+    )
     return result
 
 
@@ -2567,19 +2911,46 @@ def _select_best_for_state_by_slot_fit(
         except Exception as exc:
             overlay[idx] = PlaceabilityOverlayEntry(False, None, None, None, str(exc))
     if rescored:
-        rescored.sort(reverse=True)
-        _volume, _clearance, _candidate_i, selected_dbg, selected_decision, selected_target = rescored[0]
-        selection.result.selected = selected_dbg
-        selection.result.selected_decision = selected_decision
-        state.selected_index = state.candidates.index(selected_dbg)
-        print(
-            f"[PLAN] selected #{selected_decision.candidate_index} {selected_decision.class_name}: "
-            f"placeable footprint clearance={selected_target.fit_clearance_mm:.1f}mm "
-            f"target=({selected_target.target_xy_mm[0]:.1f},{selected_target.target_xy_mm[1]:.1f}) "
-            f"phi={selected_target.target_phi_deg:.1f}"
-        )
-    elif selection.result.selected is not None:
-        print("[PLAN] no candidate has a valid gripper/bag footprint; clearing selection before pick.")
+        if PLACE_PLANNING_SEQUENCE_NAME == FOUNDATION_FLOOR_FUTURE_AWARE:
+            # Trust the sequence's own selection — do not re-rank by volume
+            sel = selection.result.selected
+            sel_dec = selection.result.selected_decision
+            if sel is not None and sel_dec is not None:
+                state.selected_index = state.candidates.index(sel)
+                print(
+                    f"[PLAN] foundation mode: trusting sequence selection "
+                    f"#{getattr(sel_dec, 'candidate_index', '?')} "
+                    f"{getattr(sel_dec, 'class_name', '?')}"
+                )
+            else:
+                # sequence found nothing placeable; fall back to volume sort
+                rescored.sort(reverse=True)
+                _volume, _clearance, _candidate_i, selected_dbg, selected_decision, selected_target = rescored[0]
+                selection.result.selected = selected_dbg
+                selection.result.selected_decision = selected_decision
+                state.selected_index = state.candidates.index(selected_dbg)
+        else:
+            rescored.sort(reverse=True)
+            _volume, _clearance, _candidate_i, selected_dbg, selected_decision, selected_target = rescored[0]
+            selection.result.selected = selected_dbg
+            selection.result.selected_decision = selected_decision
+            state.selected_index = state.candidates.index(selected_dbg)
+            print(
+                f"[PLAN] selected #{selected_decision.candidate_index} {selected_decision.class_name}: "
+                f"placeable footprint clearance={selected_target.fit_clearance_mm:.1f}mm "
+                f"target=({selected_target.target_xy_mm[0]:.1f},{selected_target.target_xy_mm[1]:.1f}) "
+                f"phi={selected_target.target_phi_deg:.1f}"
+            )
+    else:
+        if selection.result.selected is not None:
+            print(
+                "[PLAN] no candidate has a valid gripper/bag footprint; "
+                "falling back to on-platform ground truth pick selection."
+            )
+        fallback = choose_best_candidate(state, config=config, robot=robot, placed_boxes=placed_boxes)
+        fallback = _apply_platform_ground_truth_fallback(fallback, state=state)
+        if fallback.selected is not None:
+            return fallback, overlay
         selection.result.selected = None
         selection.result.selected_decision = None
     return selection.result, overlay
@@ -2873,6 +3244,10 @@ def main() -> int:
     _configure_modules()
     _survey_pipeline_mod.OVERHEAD_FRESH_READ_DISCARD_FRAMES = OVERHEAD_FRESH_READ_DISCARD_FRAMES
     _survey_pipeline_mod.OVERHEAD_FRESH_READ_DELAY_S = OVERHEAD_FRESH_READ_DELAY_S
+    _survey_pipeline_mod.PROFILE_SURVEY_TIMING = PROFILE_SURVEY_TIMING
+    _burst_tracking_mod.STEREO_BURST_PREFRESH_COUNT = STEREO_BURST_PREFRESH_COUNT
+    _burst_tracking_mod.STEREO_BURST_PREFRESH_DELAY_S = STEREO_BURST_PREFRESH_DELAY_S
+    _burst_tracking_mod.PROFILE_SURVEY_TIMING = PROFILE_SURVEY_TIMING
     _pick_one_mod.REQUIRE_CONFIRM_BEFORE_PICK = bool(REQUIRE_CONFIRM_BEFORE_REAL_MOTION)
     _pick_one_mod.REQUIRE_CONFIRM_BEFORE_PLACE = bool(REQUIRE_CONFIRM_BEFORE_REAL_MOTION)
     _hr("AUTONOMOUS PICK PLACE - MISSED PICK RECOVERY", "=")
@@ -2938,18 +3313,38 @@ def main() -> int:
         *,
         object_i: int,
     ) -> OptimizedPlaceTarget:
-        return _compute_candidate_place_target_for_sequence(
-            cand_dbg,
-            state=state,
-            object_i=object_i,
-            robot=robot,
-            placed_boxes=placed_boxes,
-            config=selector_config,
-            surface_zone=surface_zone,
-            base_xy=base_xy,
-            base_phi_deg=place_phi,
-            target_limit=target_limit,
-        )
+        try:
+            return _compute_candidate_place_target_for_sequence(
+                cand_dbg,
+                state=state,
+                object_i=object_i,
+                robot=robot,
+                placed_boxes=placed_boxes,
+                config=selector_config,
+                surface_zone=surface_zone,
+                base_xy=base_xy,
+                base_phi_deg=place_phi,
+                target_limit=target_limit,
+            )
+        except Exception as exc:
+            bag_center_xy = np.asarray(surface_zone["center_xy_mm"], dtype=np.float64).reshape(2)
+            print(
+                f"[PLAN WARN] object{object_i}: placement planner failed ({exc}); "
+                "falling back to conservative bag-center target so watchdog/recovery can continue."
+            )
+            fallback = _optimize_place_target_for_slot(
+                cand_dbg,
+                target_xy_mm=bag_center_xy,
+                base_phi_deg=place_phi,
+                surface_zone=surface_zone,
+                label=f"object{object_i}_planner_fallback",
+                verbose=False,
+            )
+            fallback.reason = f"planner_exception_fallback:{exc}"
+            fallback.planner_layer_z_mm = float(surface_z)
+            fallback.support_box_index = None
+            fallback.support_top_z_mm = float(surface_z)
+            return fallback
 
     _placeability_cache: dict[tuple, dict | None] = {}
 
@@ -3103,6 +3498,23 @@ def main() -> int:
         print(f"[PREFETCH] submitting next survey for object {next_object_i} at place descent")
         prefetched_future = survey_executor.submit(prefetch_worker, next_object_i)
 
+    def start_prefetch_after_watchdog_clear(next_object_i: int) -> None:
+        nonlocal prefetched_future
+        if not PREFETCH_NEXT_SURVEY_ON_PLACE_DESCENT:
+            print("[PREFETCH] disabled")
+            return
+        if prefetched_future is not None and not prefetched_future.done():
+            print("[PREFETCH] already running; not submitting another survey")
+            return
+        set_status([
+            f"PREFETCH: object {next_object_i} survey queued",
+            "Watchdog cleared the pick; surveying platform immediately.",
+            "If nothing is seen next, the arm will return to survey pose.",
+            "Selection will be audited after this survey finishes.",
+        ])
+        print(f"[PREFETCH] submitting next survey for object {next_object_i} after watchdog clear")
+        prefetched_future = survey_executor.submit(prefetch_worker, next_object_i)
+
     def get_survey_for_object(object_i: int, *, seed_overhead_frame: np.ndarray | None = None) -> SurveyState:
         nonlocal state, prefetched_future
         if prefetched_future is None:
@@ -3234,6 +3646,7 @@ def main() -> int:
         target_xy: np.ndarray,
         target_phi: float,
         destination_surface_for_call: float,
+        watchdog_clear_prefetch_cb: Callable[[], None] | None,
         place_descent_cb: Callable[[], None] | None,
     ) -> tuple[str, MissMatchResult | None]:
         prepared = _prepare_place_at_target(
@@ -3268,6 +3681,12 @@ def main() -> int:
             "Next survey starts after the release finishes.",
             "q=quit | c=clear box | g=survey pose+rehome",
         ])
+        if watchdog_clear_prefetch_cb is not None:
+            try:
+                print("[MISS CHECK] clear; starting next survey immediately from place hover.")
+                watchdog_clear_prefetch_cb()
+            except Exception as exc:
+                print(f"[MISS CHECK] WARN: immediate next-survey prefetch failed: {exc}")
         if not _finish_place_from_hover(robot, prepared, on_start_place_descent=place_descent_cb):
             return "failed", miss_result
         return "placed", miss_result
@@ -3410,6 +3829,7 @@ def main() -> int:
                 held = None
                 max_local_pick_attempts = max(1, min(5, len(survey_state.candidates)))
                 excluded_pick_indices: set[int] = set()
+                blocked_clearance_fallbacks: list[tuple[tuple[float, float, float, float, int], CandidateDebug, list[str]]] = []
 
                 for local_pick_try in range(1, max_local_pick_attempts + 1):
                     if selection.selected is None:
@@ -3432,6 +3852,37 @@ def main() -> int:
                     for _w in _obs_warnings:
                         print(_w)
                     if not _obs_ok:
+                        # ── intercept-and-clear mode ──────────────────────────
+                        # If INTERCEPT_MODE == "clear", pick the blocking item
+                        # first, move it to a free platform spot, then retry
+                        # the original target on the next loop iteration.
+                        if _allow_clearance_fallback_candidate(cand_dbg):
+                            blocked_clearance_fallbacks.append(
+                                (_blocked_candidate_clearance_key(cand_dbg, _obs_warnings), cand_dbg, list(_obs_warnings))
+                            )
+                        if str(INTERCEPT_MODE).strip().lower() == "clear":
+                            _intercept_ok = _execute_intercept_clear(
+                                robot, cand_dbg, survey_state, bundle
+                            )
+                            if _intercept_ok:
+                                # Blocker removed from candidates; retry same target.
+                                if EFFICIENT_PACKING_ENABLED:
+                                    selection, _ = _select_best_for_state_by_slot_fit(
+                                        survey_state, object_i=i, robot=robot,
+                                        placed_boxes=placed_boxes, config=selector_config,
+                                        surface_zone=surface_zone, base_xy=base_xy,
+                                        base_phi_deg=place_phi, target_limit=target_limit,
+                                    )
+                                else:
+                                    selection = _select_best_for_state(
+                                        survey_state, robot=robot,
+                                        placed_boxes=placed_boxes, config=selector_config,
+                                    )
+                                continue
+                            # Intercept failed; fall through to legacy skip.
+                            print("[INTERCEPT] intercept clear failed; falling back to skip")
+
+                        # ── legacy: skip this candidate ───────────────────────
                         print(f"[OBSTACLE] skipping candidate [{c.index}] {c.yolo.class_name} — too close to another item")
                         excluded_pick_indices.add(c_idx)
                         survey_state.candidates = [
@@ -3527,8 +3978,33 @@ def main() -> int:
                         )
 
                 if held is None or attempt is None:
-                    print(f"[FLOW] object {i} pick failed for all local candidates; re-surveying current slot.")
-                    continue
+                    if blocked_clearance_fallbacks:
+                        blocked_clearance_fallbacks.sort(key=lambda item: item[0], reverse=True)
+                        _fallback_key, fallback_dbg, fallback_warnings = blocked_clearance_fallbacks[0]
+                        print(
+                            f"[FLOW] no obstacle-free candidate remained; "
+                            f"falling back to best-clearance candidate [{fallback_dbg.candidate.index}] "
+                            f"{fallback_dbg.candidate.yolo.class_name}."
+                        )
+                        print(
+                            "[FLOW] fallback clearance metrics: "
+                            f"max_overlap={-float(_fallback_key[0]):.1f}mm "
+                            f"sep_score={float(_fallback_key[1]):.1f}mm"
+                        )
+                        for _w in fallback_warnings:
+                            print(f"[FLOW] fallback accepted despite warning: {_w}")
+                        attempt = make_pick_attempt_record(object_i=i, cand_dbg=fallback_dbg, robot=robot, attempt_number=1)
+                        if execute_pick_selected(robot, fallback_dbg, bundle=bundle):
+                            held = fallback_dbg
+                            cand_dbg = fallback_dbg
+                    if held is None or attempt is None:
+                        print(f"[FLOW] object {i} pick failed for all local candidates; moving to survey pose before re-survey.")
+                        try:
+                            _raise_or_hold_safe_z(robot, "[FLOW] local-failure retract", min(CLEAR_BOX_Z_MM, Z_MAX_MM), CLEAR_BOX_MOVE_TIME_S)
+                            _move_to_recovery_pose(robot)
+                        except Exception as _exc:
+                            print(f"[FLOW] WARN: could not move to survey pose after local candidate exhaustion: {_exc}")
+                        continue
 
                 raw_box = aabb_from_object_candidate(cand_dbg.candidate, default_label=f"object{i}")
                 object_height_mm = float(raw_box.size_xyz_mm[2])
@@ -3544,7 +4020,18 @@ def main() -> int:
                     f"phi={target_phi:.1f} nudge=({optimized_target.nudge_xy_mm[0]:.1f},{optimized_target.nudge_xy_mm[1]:.1f}) "
                     f"fit_clearance={optimized_target.fit_clearance_mm:.1f} can_place={optimized_target.can_place}"
                 )
-                if i >= 3 and len(placed_boxes) >= 1:
+                should_stack_on_existing = (
+                    i >= 3
+                    and len(placed_boxes) >= 1
+                    and (
+                        optimized_target.support_box_index is not None
+                        or (
+                            optimized_target.support_top_z_mm is not None
+                            and float(optimized_target.support_top_z_mm) > float(surface_z) + 1e-3
+                        )
+                    )
+                )
+                if should_stack_on_existing:
                     support_idx = optimized_target.support_box_index
                     if support_idx is None and optimized_target.support_top_z_mm is not None:
                         support_idx = next(
@@ -3582,6 +4069,11 @@ def main() -> int:
                 next_i = i + 1
                 should_prefetch_next = bool(PREFETCH_NEXT_SURVEY_ON_PLACE_DESCENT) and (
                     run_until_no_valid_active() or next_i <= target_limit
+                )
+                watchdog_clear_prefetch_cb = (
+                    (lambda next_object_i=next_i: start_prefetch_after_watchdog_clear(next_object_i))
+                    if should_prefetch_next
+                    else None
                 )
                 place_descent_cb = (
                     (lambda next_object_i=next_i: start_prefetch_on_place_descent(next_object_i))
@@ -3629,12 +4121,75 @@ def main() -> int:
                         print("[FLOW] placement footprint gate failed even at bag center; re-surveying.")
                         continue
 
+                # ── safe pick→hover travel-path clearance ──────────────────────
+                # The robot is at Z_MAX at the pick XY after retract.  Before
+                # _prepare_place_at_target sweeps XY to the bag hover position,
+                # execute any bypass waypoints so the held item doesn't clip
+                # remaining platform candidates that are too tall to clear.
+                if TRAVEL_CLEARANCE_ENABLED and survey_state and survey_state.candidates:
+                    _path_remaining = [d for d in survey_state.candidates if d is not held]
+                    if _path_remaining:
+                        from motion.platform_clearance import (
+                            compute_pick_to_hover_path,
+                            obstacles_from_candidates,
+                        )
+                        _path_obs = obstacles_from_candidates(_path_remaining)
+                        _held_height = float(
+                            aabb_from_object_candidate(
+                                held.candidate, default_label="held"
+                            ).size_xyz_mm[2]
+                            if held is not None else 80.0
+                        )
+                        _pick_xy_for_path = np.asarray(
+                            held.candidate.target_xy, dtype=np.float64
+                        ) if held is not None else target_xy
+                        _path_plan = compute_pick_to_hover_path(
+                            pick_xy_mm=_pick_xy_for_path,
+                            bag_hover_xy_mm=target_xy,
+                            held_height_mm=_held_height,
+                            obstacles=_path_obs,
+                            z_max_mm=float(Z_MAX_MM),
+                            gripper_offset_mm=float(
+                                getattr(_pick_one_mod, "GRIPPER_OFFSET_MM",
+                                        DEFAULT_Z_SAFETY.GRIPPER_OFFSET_MM)
+                            ),
+                            platform_x_range_mm=(PLATFORM_X_MIN_MM, PLATFORM_X_MAX_MM),
+                            gripper_half_width_mm=TRAVEL_GRIPPER_HALF_WIDTH_MM,
+                            clearance_margin_xy_mm=TRAVEL_CLEARANCE_MARGIN_XY_MM,
+                            clearance_margin_z_mm=TRAVEL_CLEARANCE_MARGIN_Z_MM,
+                            bypass_x_margin_mm=TRAVEL_BYPASS_X_MARGIN_MM,
+                        )
+                        if _path_plan.blocking_labels:
+                            print(
+                                f"[CLEAR PATH] held bottom z={_path_plan.held_bottom_z_mm:.1f} mm; "
+                                f"direct path blocked by: {', '.join(_path_plan.blocking_labels)}"
+                            )
+                            print(f"[CLEAR PATH] bypass via {_path_plan.bypass_side}")
+                        for _warn in _path_plan.warnings:
+                            print(f"[CLEAR PATH] WARN: {_warn}")
+                        for _wp in _path_plan.waypoints_xy_mm:
+                            print(
+                                f"[CLEAR PATH] waypoint XY=({_wp[0]:.1f},{_wp[1]:.1f}) "
+                                f"Z={Z_MAX_MM:.1f}"
+                            )
+                            if not _sequence_move_checked(
+                                robot,
+                                "[CLEAR PATH] bypass wp",
+                                x_mm=float(_wp[0]),
+                                y_mm=float(_wp[1]),
+                                z_mm=float(Z_MAX_MM),
+                                move_time_s=float(XY_MOVE_TIME_S),
+                            ):
+                                print("[CLEAR PATH] bypass waypoint move failed; proceeding to direct place")
+                                break
+
                 place_status, miss_result = place_or_detect_miss(
                     held_object=held,
                     attempt=attempt,
                     target_xy=target_xy,
                     target_phi=target_phi,
                     destination_surface_for_call=destination_surface_for_call,
+                    watchdog_clear_prefetch_cb=watchdog_clear_prefetch_cb,
                     place_descent_cb=place_descent_cb,
                 )
 
@@ -3719,6 +4274,7 @@ def main() -> int:
                         target_xy=target_xy,
                         target_phi=target_phi,
                         destination_surface_for_call=destination_surface_for_call,
+                        watchdog_clear_prefetch_cb=watchdog_clear_prefetch_cb,
                         place_descent_cb=place_descent_cb,
                     )
                     if retry_place_status == "miss":
@@ -3769,10 +4325,9 @@ def main() -> int:
                     placed_boxes.append(placed)
                 else:
                     if below_top_z_mm is None:
-                        print(f"[FLOW] missing below_top_z_mm for object {i}")
-                        run_ok = False
-                        break
-                    stack_center_z = below_top_z_mm + 0.5 * object_height_mm
+                        stack_center_z = float(surface_z) + 0.5 * object_height_mm
+                    else:
+                        stack_center_z = below_top_z_mm + 0.5 * object_height_mm
                     placed = _placed_occupancy_from_plan(
                         center_xyz_mm=np.array([float(target_xy[0]), float(target_xy[1]), stack_center_z], dtype=np.float64),
                         size_xyz_mm=raw_box.size_xyz_mm,

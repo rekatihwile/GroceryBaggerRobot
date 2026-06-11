@@ -1,0 +1,4 @@
+manifest_row,object_i,class_name,place_result,execution_classification,support_manifest_row,overlap_manifest_rows,inside_bag,target_x_mm,target_y_mm,destination_surface_z_mm,box_center_x_mm,box_center_y_mm,box_center_z_mm,box_size_x_mm,box_size_y_mm,box_size_z_mm
+1,1,Burts Bees,placed,manifest_executed_floor,,,True,279.2627558071415,728.9365315339413,-155.0,279.2627558071415,728.9365315339413,-144.23128876110763,81.47448761428303,57.87306306788258,21.53742247778473
+2,2,Chex Mix,placed,manifest_executed_floor,,,True,167.92243160053576,748.9610177511204,-155.0,167.92243160053576,748.9610177511204,-144.97206249151614,135.84486320107152,97.92203550224069,20.055875016967736
+3,3,Pringles,pending,not_placed:pending,,,,,,,,,,,,

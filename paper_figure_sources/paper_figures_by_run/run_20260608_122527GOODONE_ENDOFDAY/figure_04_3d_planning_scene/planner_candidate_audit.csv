@@ -1,0 +1,4 @@
+candidate_index,class_name,manifest_selected,selector_passed,selector_reject_reasons,replay_can_place,replay_target_x_mm,replay_target_y_mm,replay_layer_z_mm,executed_target_x_mm,executed_target_y_mm,executed_layer_z_mm,reconciliation_mode,reconciliation_note
+1,Burts Bees,True,True,,True,117.30585827985746,743.7759635623793,0.0,137.30585827985746,743.7759635623793,0.0,manifest_override_replay_mismatch,"execution overrides replay target; delta=20.0 mm XY, 0.0 mm layer Z"
+2,Pringles,False,True,,True,110.58193136243975,742.2580972473208,0.0,,,,,
+3,Dove Deodorant,False,True,,True,106.7413530278271,750.295847947524,0.0,,,,,

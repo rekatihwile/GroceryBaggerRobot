@@ -1,0 +1,8 @@
+manifest_row,object_i,class_name,place_result,execution_classification,support_manifest_row,overlap_manifest_rows,inside_bag,target_x_mm,target_y_mm,destination_surface_z_mm,box_center_x_mm,box_center_y_mm,box_center_z_mm,box_size_x_mm,box_size_y_mm,box_size_z_mm
+1,1,Pringles,placed,manifest_executed_floor,,,True,131.52452673090028,782.987772310488,-155.0,131.52452673090028,782.987772310488,-106.61160938827435,63.049053461800554,54.02445462097603,96.77678122345131
+2,2,Burts Bees,placed,manifest_executed_floor_with_aabb_overlap,,1,True,192.06846591435317,757.0603752814759,-155.0,192.06846591435317,757.0603752814759,-144.7189098523109,75.87924856295184,58.03882582870631,20.56218029537822
+3,3,Dove Deodorant,pending,not_placed:pending,,,,,,,,,,,,
+4,1,Pringles,placed,manifest_executed_floor,,,True,289.74223695270115,781.6131024384958,-155.0,289.74223695270115,781.6131024384958,-114.35491952463059,60.51552590540224,56.77379487699164,81.29016095073882
+5,2,Burts Bees,miss,not_placed:miss,,,,284.68320747129945,727.9236133440075,-155.0,,,,,,
+6,3,Dove Deodorant,placed,manifest_executed_unmodeled_fallback_with_aabb_overlap,,1,True,156.28048759168064,778.7988707450431,-73.70983904926118,156.28048759168064,778.7988707450431,-63.44629157605231,112.56097518336125,51.14533149008629,20.527094946417733
+7,4,Chex Mix,pending,not_placed:pending,,,,,,,,,,,,

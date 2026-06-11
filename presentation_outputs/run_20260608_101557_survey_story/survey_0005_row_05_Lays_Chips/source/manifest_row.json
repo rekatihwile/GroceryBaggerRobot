@@ -1,0 +1,52 @@
+{
+  "object_i": 5,
+  "class_name": "Lays Chips",
+  "pick_xy_mm": [
+    146.92167817160822,
+    327.924348788737
+  ],
+  "pick_z_mm": 6.771205046530603,
+  "pick_grasp_z_mm": 134.2712050465306,
+  "pick_phi_deg": 170.6606444447342,
+  "place_xy_mm": [
+    222.17852814175401,
+    754.718162545431
+  ],
+  "place_phi_deg": 0.0,
+  "destination_surface_z_mm": -90.38022902764922,
+  "place_result": "placed",
+  "raw_box_center_xyz_mm": [
+    146.92167817160822,
+    327.924348788737,
+    6.771205046530603
+  ],
+  "raw_box_size_xyz_mm": [
+    160.12707384707963,
+    112.66952595623863,
+    34.75840882446932
+  ],
+  "padded_box_center_xyz_mm": [
+    222.17852814175401,
+    754.718162545431,
+    -73.00102461541456
+  ],
+  "padded_box_size_xyz_mm": [
+    160.12707384707963,
+    112.66952595623863,
+    74.75840882446931
+  ],
+  "detection_class": "Lays Chips",
+  "detection_confidence": 0.95751953125,
+  "detection_bbox_xyxy": [
+    192.75,
+    145.25,
+    434.25,
+    326.5
+  ],
+  "stereo_left": "Stereo_Left_0005.png",
+  "stereo_right": "Stereo_Right_0005.png",
+  "overhead": "Overhead_0005.png",
+  "disparity": "disparity_0005.npz",
+  "points_cam": "points_cam_0005.npz",
+  "left_overlay": "left_overlay_0005.png"
+}

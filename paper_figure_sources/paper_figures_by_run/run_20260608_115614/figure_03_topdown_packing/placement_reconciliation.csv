@@ -1,0 +1,2 @@
+manifest_row,object_i,class_name,place_result,execution_classification,support_manifest_row,overlap_manifest_rows,inside_bag,target_x_mm,target_y_mm,destination_surface_z_mm,box_center_x_mm,box_center_y_mm,box_center_z_mm,box_size_x_mm,box_size_y_mm,box_size_z_mm
+1,1,Lays Chips,placed,manifest_executed_floor_with_boundary_overflow,,,False,210.0,755.0,-155.0,210.0,755.0,-92.72109061089569,366.4807177316536,84.35887990733663,124.55781877820863

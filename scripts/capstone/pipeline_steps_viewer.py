@@ -31,7 +31,15 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-TRAINING_IMAGES_DIR  = _REPO_ROOT / "Training_Images"
+# VS Code IDE defaults.
+# Copy/paste your image directory here (Windows raw string recommended), e.g.
+# r"C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images"
+IDE_DEFAULT_IMAGES_DIR_STR: str | None = r"C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\data\run_snapshots\run_20260531_165144"
+TRAINING_IMAGES_DIR  = Path(IDE_DEFAULT_IMAGES_DIR_STR) if IDE_DEFAULT_IMAGES_DIR_STR else (_REPO_ROOT / "Training_Images")
+
+# Optional explicit output override. None uses paper_figure_sources.
+IDE_DEFAULT_SAVE_OUTPUT_DIR_STR: str | None = None
+
 STEREO_CALIB_PATH    = _REPO_ROOT / "stereo_calibration.npz"
 YOLO_WEIGHTS_PATH    = _REPO_ROOT / "yolo_weights/full_data.pt"
 YOLO_FALLBACK_PATH   = _REPO_ROOT / "yolo_weights/validate_V2.pt"
@@ -46,7 +54,7 @@ MIN_DISPARITY_PX = 1.0
 USE_CUDA         = True
 USE_HALF         = True
 
-SAVE_OUTPUT_DIR  = _REPO_ROOT / "outputs/capstone/pipeline_steps"
+SAVE_OUTPUT_DIR = Path(IDE_DEFAULT_SAVE_OUTPUT_DIR_STR) if IDE_DEFAULT_SAVE_OUTPUT_DIR_STR else (_REPO_ROOT / "paper_figure_sources/global/diagnostics")
 
 # Set True when Training_Images are already rectified (default from capture script).
 IMAGES_ALREADY_RECTIFIED = True
@@ -68,6 +76,14 @@ from vision.yolo_segmenter import YOLOSegmenter, YOLODetection
 from vision.raft_runner import RAFTStereoRunner
 from vision.stereo_rectifier import StereoRectifier
 from vision.pointcloud import masked_disparity_to_pointcloud
+from scripts.capstone.pointcloud_color import photo_colors_for_points
+from scripts.capstone.publication_config import (
+    DEFAULT_PUBLICATION_DPI,
+    output_dir_for_images,
+    save_figure_bundle,
+)
+
+CLEAN_EXPORTS = True
 
 # ── palette for per-object colouring ──────────────────────────────────────
 _PALETTE = [
@@ -146,12 +162,14 @@ def run_pipeline(
     dets     = yolo.segment(rect_left)
     disparity = raft.predict_disparity(rect_left, rect_right, color="BGR")
 
-    pointclouds: list[tuple[YOLODetection, np.ndarray]] = []
+    pointclouds: list[tuple[YOLODetection, np.ndarray, np.ndarray]] = []
+    rect_left_rgb = cv2.cvtColor(rect_left, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     for det in dets:
         try:
-            pts, _ = masked_disparity_to_pointcloud(det.mask, disparity, stereo_calib)
-            if len(pts) > 0:
-                pointclouds.append((det, pts))
+            pts, uv_px = masked_disparity_to_pointcloud(det.mask, disparity, stereo_calib)
+            colors_rgb, color_valid = photo_colors_for_points(rect_left_rgb, uv_px, len(pts))
+            if colors_rgb is not None and color_valid is not None:
+                pointclouds.append((det, pts[color_valid], colors_rgb))
         except Exception:
             pass
 
@@ -247,7 +265,7 @@ def make_figure(data: dict, pair_index: int) -> plt.Figure:
                     transform=ax_leg.transAxes)
 
     # Row 2+: per-object masked disparity + 3-D scatter
-    for obj_i, (det, pts) in enumerate(pcs[:n_obj_rows * 2]):
+    for obj_i, (det, pts, colors_rgb) in enumerate(pcs[:n_obj_rows * 2]):
         row = 2 + obj_i // 2
         col_offset = (obj_i % 2) * 2
         pal_col = _PALETTE[obj_i % len(_PALETTE)]
@@ -272,10 +290,16 @@ def make_figure(data: dict, pair_index: int) -> plt.Figure:
         # 3-D scatter
         ax3d = fig.add_subplot(gs[row, col_offset + 1], projection="3d")
         ax3d.set_facecolor("#0d0d1a")
-        sample = pts if len(pts) <= 4000 else pts[np.random.choice(len(pts), 4000, replace=False)]
+        if len(pts) <= 4000:
+            sample = pts
+            sample_colors = colors_rgb
+        else:
+            sample_indices = np.random.choice(len(pts), 4000, replace=False)
+            sample = pts[sample_indices]
+            sample_colors = colors_rgb[sample_indices]
         ax3d.scatter(
             sample[:, 0], sample[:, 2], -sample[:, 1],
-            c=[pal_col], s=0.8, alpha=0.6,
+            c=sample_colors, s=0.8, alpha=0.75,
         )
         ax3d.set_xlabel("X cam", color="#aaa", fontsize=7, labelpad=2)
         ax3d.set_ylabel("Z cam", color="#aaa", fontsize=7, labelpad=2)
@@ -289,15 +313,32 @@ def make_figure(data: dict, pair_index: int) -> plt.Figure:
             pane.fill = False
             pane.set_edgecolor("#333")
 
+    if CLEAN_EXPORTS:
+        fig.suptitle("")
+        for ax in fig.axes:
+            ax.set_title("")
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            if hasattr(ax, "set_zlabel"):
+                ax.set_zlabel("")
+            for text in ax.texts:
+                text.set_visible(False)
     return fig
 
 
 def main(argv: list[str] | None = None) -> int:
+    global CLEAN_EXPORTS
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--images", default=str(TRAINING_IMAGES_DIR))
     parser.add_argument("--index", type=int, default=None)
     parser.add_argument("--save", action="store_true")
+    parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument("--dpi", type=int, default=DEFAULT_PUBLICATION_DPI)
+    parser.add_argument("--annotated", action="store_true")
+    parser.add_argument("--no-gui", action="store_true")
     args = parser.parse_args(argv)
+    CLEAN_EXPORTS = not bool(args.annotated)
 
     training_dir = Path(args.images)
     pairs = _find_stereo_pairs(training_dir)
@@ -347,13 +388,20 @@ def main(argv: list[str] | None = None) -> int:
     fig = make_figure(data, idx)
 
     if args.save:
-        SAVE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = SAVE_OUTPUT_DIR / f"pipeline_steps_{idx:04d}.png"
-        fig.savefig(str(out_path), dpi=120, bbox_inches="tight",
-                    facecolor=fig.get_facecolor())
-        print(f"[SAVE] {out_path}")
+        save_dir = output_dir_for_images(training_dir, args.out_dir) / "diagnostics"
+        outputs = save_figure_bundle(
+            fig,
+            save_dir / f"perception_full_pipeline_pair_{idx:04d}",
+            dpi=args.dpi,
+            facecolor=fig.get_facecolor(),
+        )
+        for path in outputs:
+            print(f"[SAVE] {path}")
 
-    plt.show()
+    if args.no_gui:
+        plt.close(fig)
+    else:
+        plt.show()
     return 0
 
 

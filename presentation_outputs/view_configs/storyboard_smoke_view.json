@@ -1,0 +1,14 @@
+{
+  "azim": -62.0,
+  "elev": 22.0,
+  "dist": null,
+  "xlim": [80.0, 340.0],
+  "ylim": [680.0, 830.0],
+  "zlim": [-175.0, 90.0],
+  "point_size": 1.2,
+  "show_labels": true,
+  "show_padded": true,
+  "show_raw": true,
+  "show_pointclouds": true,
+  "theme": "paper"
+}

@@ -1,0 +1,10 @@
+{
+  "object_i": 1,
+  "class_name": "unknown",
+  "stereo_left": "Stereo_Left_0001.png",
+  "stereo_right": "Stereo_Right_0001.png",
+  "overhead": "Overhead_0001.png",
+  "left_overlay": "left_overlay_0001.png",
+  "disparity": "disparity_0001.npz",
+  "points_cam": "points_cam_0001.npz"
+}

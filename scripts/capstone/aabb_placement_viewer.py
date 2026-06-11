@@ -34,7 +34,15 @@ if str(_REPO_ROOT) not in sys.path:
 
 from config.place import DEFAULT_PLACE
 
-TRAINING_IMAGES_DIR = _REPO_ROOT / "Training_Images"
+# VS Code IDE defaults.
+# Copy/paste your image directory here (Windows raw string recommended), e.g.
+# r"C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images"
+IDE_DEFAULT_IMAGES_DIR_STR: str | None = r"C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\data\run_snapshots\run_20260531_165144"
+TRAINING_IMAGES_DIR = Path(IDE_DEFAULT_IMAGES_DIR_STR) if IDE_DEFAULT_IMAGES_DIR_STR else (_REPO_ROOT / "Training_Images")
+
+# Optional explicit output override. None uses paper_figure_sources.
+IDE_DEFAULT_SAVE_OUTPUT_DIR_STR: str | None = None
+
 STEREO_CALIB_PATH   = _REPO_ROOT / "stereo_calibration.npz"
 BUNDLE_PATH         = _REPO_ROOT / "robot_calibration_bundle.npz"
 YOLO_WEIGHTS_PATH   = _REPO_ROOT / "yolo_weights/full_data.pt"
@@ -55,7 +63,7 @@ USE_HALF     = True
 # script saves pre-rectified pairs).  Set False only if you pass raw images.
 IMAGES_ALREADY_RECTIFIED = True
 
-SAVE_OUTPUT_DIR = _REPO_ROOT / "outputs/capstone/aabb_viewer"
+SAVE_OUTPUT_DIR = Path(IDE_DEFAULT_SAVE_OUTPUT_DIR_STR) if IDE_DEFAULT_SAVE_OUTPUT_DIR_STR else (_REPO_ROOT / "paper_figure_sources/global/diagnostics")
 
 # ============================================================
 
@@ -74,9 +82,25 @@ from vision.yolo_segmenter import YOLOSegmenter, YOLODetection
 from vision.raft_runner import RAFTStereoRunner
 from vision.stereo_rectifier import StereoRectifier
 from vision.pointcloud import masked_disparity_to_pointcloud, cam_points_to_robot_xyz
+from scripts.capstone.pointcloud_color import photo_colors_for_points
 from planning.aabb_utils import aabb_from_object_candidate, pad_aabb, AxisAlignedBox3D
 from vision.object_geometry import build_object_candidate
 from vision.pick_z_resolver import resolve_robust_object_z
+from config.workspace.workspace_config import get_workspace_filter_config, workspace_bounds_mm
+from scripts.capstone.publication_config import (
+    DEFAULT_PUBLICATION_DPI,
+    output_dir_for_images,
+    save_figure_bundle,
+)
+
+# Robot-side candidate gates (mirrors BestCandidateConfig defaults)
+_WORKSPACE_CFG = get_workspace_filter_config("wet_run")
+_WS_X_MIN, _WS_X_MAX, _WS_Y_MIN, _WS_Y_MAX = workspace_bounds_mm(_WORKSPACE_CFG)
+_MIN_VOLUME_MM3: float = 1.0
+_MAX_VOLUME_MM3: float = 3_000_000.0
+_GRIPPER_OFFSET_MM: float = 130.0
+_Z_MAX_MM: float = 275.0
+CLEAN_EXPORTS = True
 
 
 class _NullRobot:
@@ -193,9 +217,11 @@ def run_and_plot(
 
     cam_pts_all:   list[np.ndarray] = []  # camera frame
     robot_pts_all: list[np.ndarray] = []  # robot frame
+    point_colors_all: list[np.ndarray] = []
     raw_boxes:     list[AxisAlignedBox3D] = []
     pad_boxes:     list[AxisAlignedBox3D] = []
     det_labels:    list[str] = []
+    rect_l_rgb = cv2.cvtColor(rect_l, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
 
     for idx, det in enumerate(dets, start=1):
         try:
@@ -204,6 +230,10 @@ def run_and_plot(
             print(f"  [PC {idx}] failed: {exc}"); continue
         if len(pts_cam) < 300:
             print(f"  [PC {idx}] too few points ({len(pts_cam)})"); continue
+        point_colors, color_valid = photo_colors_for_points(rect_l_rgb, uv, len(pts_cam))
+        if point_colors is None or color_valid is None:
+            print(f"  [PC {idx}] original-photo colors unavailable"); continue
+        pts_cam = pts_cam[color_valid]
 
         try:
             pts_robot = cam_points_to_robot_xyz(pts_cam, bundle)
@@ -227,8 +257,27 @@ def run_and_plot(
         except Exception as exc:
             print(f"  [AABB {idx}] failed: {exc}"); continue
 
+        # ── Robot-side candidate gates (same logic the robot applies at runtime) ──
+        cand_xy = np.asarray(cand.object_robot_xyz_raw[:2], dtype=np.float64)
+        if _WORKSPACE_CFG.require_positive_platform_xy and (cand_xy[0] <= 0.0 or cand_xy[1] <= 0.0):
+            print(f"  [FILTER {idx}] {det.class_name}: negative XY ({cand_xy[0]:.0f},{cand_xy[1]:.0f}), robot would reject")
+            continue
+        if not (_WS_X_MIN <= cand_xy[0] <= _WS_X_MAX and _WS_Y_MIN <= cand_xy[1] <= _WS_Y_MAX):
+            print(f"  [FILTER {idx}] {det.class_name}: outside workspace xy ({cand_xy[0]:.0f},{cand_xy[1]:.0f}) "
+                  f"bounds=[{_WS_X_MIN:.0f}-{_WS_X_MAX:.0f},{_WS_Y_MIN:.0f}-{_WS_Y_MAX:.0f}], robot would reject")
+            continue
+        vol = float(raw.size_xyz_mm[0]) * float(raw.size_xyz_mm[1]) * float(raw.size_xyz_mm[2])
+        if vol < _MIN_VOLUME_MM3 or vol > _MAX_VOLUME_MM3:
+            print(f"  [FILTER {idx}] {det.class_name}: volume {vol:.0f} mm3 out of range, robot would reject")
+            continue
+        top_z = float(raw.max_xyz_mm[2])
+        if top_z + _GRIPPER_OFFSET_MM > _Z_MAX_MM:
+            print(f"  [FILTER {idx}] {det.class_name}: top_z {top_z:.0f}+offset>{_Z_MAX_MM:.0f} (stereo phantom), robot would reject")
+            continue
+
         cam_pts_all.append(pts_cam)
         robot_pts_all.append(pts_robot)
+        point_colors_all.append(point_colors)
         raw_boxes.append(raw)
         pad_boxes.append(pad.padded_box)
         det_labels.append(f"#{idx} {det.class_name}")
@@ -250,10 +299,11 @@ def run_and_plot(
     axA = fig.add_subplot(gs[0, 0], projection="3d")
     _style_3d(axA, "A  Point Cloud — Camera Frame\n(raw stereo triangulation)")
     all_cam = np.vstack(cam_pts_all)
-    for i, (pts, label) in enumerate(zip(cam_pts_all, det_labels)):
-        samp = pts if len(pts) <= MAX_PTS_DISP else pts[np.random.choice(len(pts), MAX_PTS_DISP, False)]
+    for i, (pts, colors, label) in enumerate(zip(cam_pts_all, point_colors_all, det_labels)):
+        sample_indices = np.arange(len(pts)) if len(pts) <= MAX_PTS_DISP else np.random.choice(len(pts), MAX_PTS_DISP, False)
+        samp = pts[sample_indices]
         axA.scatter(samp[:,0], samp[:,2], -samp[:,1],
-                    c=[_PALETTE[i % len(_PALETTE)]], s=0.6, alpha=0.5, label=label)
+                    c=colors[sample_indices], s=0.6, alpha=0.75, label=label)
     _set_equal_aspect(axA, np.column_stack([all_cam[:,0], all_cam[:,2], -all_cam[:,1]]))
     axA.set_xlabel("X_cam (mm)"); axA.set_ylabel("Z_cam (mm)"); axA.set_zlabel("-Y_cam (mm)")
     axA.legend(loc="upper left", fontsize=7, labelcolor="white",
@@ -263,10 +313,11 @@ def run_and_plot(
     axB = fig.add_subplot(gs[0, 1], projection="3d")
     _style_3d(axB, "B  Point Cloud — Robot Frame\n(after A_robot_from_cam × [x y z 1]ᵀ)")
     all_robot = np.vstack(robot_pts_all)
-    for i, pts in enumerate(robot_pts_all):
-        samp = pts if len(pts) <= MAX_PTS_DISP else pts[np.random.choice(len(pts), MAX_PTS_DISP, False)]
+    for i, (pts, colors) in enumerate(zip(robot_pts_all, point_colors_all)):
+        sample_indices = np.arange(len(pts)) if len(pts) <= MAX_PTS_DISP else np.random.choice(len(pts), MAX_PTS_DISP, False)
+        samp = pts[sample_indices]
         axB.scatter(samp[:,0], samp[:,1], samp[:,2],
-                    c=[_PALETTE[i % len(_PALETTE)]], s=0.6, alpha=0.5)
+                    c=colors[sample_indices], s=0.6, alpha=0.75)
     # Draw robot origin axes
     orig = np.zeros(3)
     L = 80.0
@@ -278,13 +329,14 @@ def run_and_plot(
     axC = fig.add_subplot(gs[0, 2], projection="3d")
     _style_3d(axC, "C  AABB Hit-Boxes in Robot Frame\n(solid = raw  |  wire = padded)")
     all_pts_for_scale: list[np.ndarray] = []
-    for i, (pts, raw, pad, label) in enumerate(
-        zip(robot_pts_all, raw_boxes, pad_boxes, det_labels)
+    for i, (pts, colors, raw, pad, label) in enumerate(
+        zip(robot_pts_all, point_colors_all, raw_boxes, pad_boxes, det_labels)
     ):
         col = _PALETTE[i % len(_PALETTE)]
-        samp = pts if len(pts) <= MAX_PTS_DISP else pts[np.random.choice(len(pts), MAX_PTS_DISP, False)]
+        sample_indices = np.arange(len(pts)) if len(pts) <= MAX_PTS_DISP else np.random.choice(len(pts), MAX_PTS_DISP, False)
+        samp = pts[sample_indices]
         axC.scatter(samp[:,0], samp[:,1], samp[:,2],
-                    c=[col], s=0.5, alpha=0.35)
+                    c=colors[sample_indices], s=0.5, alpha=0.70)
         _draw_box_3d(axC, raw, col, alpha_face=0.12, linestyle="-")
         _draw_box_3d(axC, pad, col, alpha_face=0.0,  linestyle="--", alpha_edge=0.55)
         cx, cy, cz = raw.center_xyz_mm
@@ -297,23 +349,25 @@ def run_and_plot(
     axC.text2D(0.03, 0.05, "─── raw AABB\n- - - padded AABB",
                transform=axC.transAxes, color="white", fontsize=7, va="bottom")
 
-    if save:
-        SAVE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        out = SAVE_OUTPUT_DIR / f"aabb_viewer_{pair_index:04d}.png"
-        fig.savefig(str(out), dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())
-        print(f"[SAVE] {out}")
-
     return fig
 
 
 def main(argv: list[str] | None = None) -> int:
+    global CLEAN_EXPORTS
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--images", default=str(TRAINING_IMAGES_DIR))
     parser.add_argument("--index", type=int, default=None)
     parser.add_argument("--save", action="store_true")
+    parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument("--dpi", type=int, default=DEFAULT_PUBLICATION_DPI)
+    parser.add_argument("--annotated", action="store_true")
+    parser.add_argument("--no-gui", action="store_true")
     args = parser.parse_args(argv)
+    CLEAN_EXPORTS = not bool(args.annotated)
 
-    pairs = _find_stereo_pairs(Path(args.images))
+    images_dir = Path(args.images)
+    pairs = _find_stereo_pairs(images_dir)
     if not pairs:
         print("[ERROR] no stereo pairs"); return 1
     if args.index is not None:
@@ -350,7 +404,30 @@ def main(argv: list[str] | None = None) -> int:
                        rectifier=rectifier, stereo_calib=calib,
                        bundle=bundle, pair_index=idx, save=args.save)
     if fig is not None:
-        plt.show()
+        if CLEAN_EXPORTS:
+            fig.suptitle("")
+            for ax in fig.axes:
+                ax.set_title("")
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                if hasattr(ax, "set_zlabel"):
+                    ax.set_zlabel("")
+                for text in ax.texts:
+                    text.set_visible(False)
+        if args.save:
+            save_dir = output_dir_for_images(images_dir, args.out_dir) / "diagnostics"
+            outputs = save_figure_bundle(
+                fig,
+                save_dir / f"pointcloud_to_padded_aabb_pair_{idx:04d}",
+                dpi=args.dpi,
+                facecolor=fig.get_facecolor(),
+            )
+            for path in outputs:
+                print(f"[SAVE] {path}")
+        if args.no_gui:
+            plt.close(fig)
+        else:
+            plt.show()
     return 0
 
 

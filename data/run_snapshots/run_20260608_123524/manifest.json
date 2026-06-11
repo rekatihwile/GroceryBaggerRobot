@@ -1,0 +1,334 @@
+{
+  "run_timestamp": "20260608_123524",
+  "script": "autonomous_missed_pick_recovery.py",
+  "place_planning_sequence": "foundation_floor_future_aware",
+  "objects": [
+    {
+      "object_i": 1,
+      "class_name": "Bandaid",
+      "pick_xy_mm": [
+        144.46991911990688,
+        129.2743872717572
+      ],
+      "pick_z_mm": -5.095078204107461,
+      "pick_grasp_z_mm": 122.40492179589253,
+      "pick_phi_deg": 101.6860806268611,
+      "place_xy_mm": [
+        162.9475041604089,
+        753.4692691295563
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -155.0,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        144.46991911990688,
+        129.2743872717572,
+        -5.095078204107461
+      ],
+      "raw_box_size_xyz_mm": [
+        125.89500832081781,
+        86.9385382591127,
+        37.27346483252733
+      ],
+      "padded_box_center_xyz_mm": [
+        162.9475041604089,
+        753.4692691295563,
+        -136.36326758373633
+      ],
+      "padded_box_size_xyz_mm": [
+        125.89500832081781,
+        86.9385382591127,
+        77.27346483252734
+      ],
+      "detection_class": "Bandaid",
+      "detection_confidence": 0.97705078125,
+      "detection_bbox_xyxy": [
+        373.25,
+        99.875,
+        521.0,
+        229.375
+      ],
+      "stereo_left": "Stereo_Left_0001.png",
+      "stereo_right": "Stereo_Right_0001.png",
+      "overhead": "Overhead_0001.png",
+      "disparity": "disparity_0001.npz",
+      "points_cam": "points_cam_0001.npz",
+      "left_overlay": "left_overlay_0001.png"
+    },
+    {
+      "object_i": 2,
+      "class_name": "Dove Deodorant",
+      "pick_xy_mm": [
+        238.6315833756844,
+        152.63145281811617
+      ],
+      "pick_z_mm": -22.182721646034846,
+      "pick_grasp_z_mm": 105.31727835396515,
+      "pick_phi_deg": 31.26987055671367,
+      "place_xy_mm": [
+        257.9968835102722,
+        755.3635024649668
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -155.0,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        238.6315833756844,
+        152.63145281811617,
+        -22.182721646034846
+      ],
+      "raw_box_size_xyz_mm": [
+        104.20375102054439,
+        53.15007092993374,
+        23.059120955273837
+      ],
+      "padded_box_center_xyz_mm": [
+        257.9968835102722,
+        755.3635024649668,
+        -143.47043952236308
+      ],
+      "padded_box_size_xyz_mm": [
+        104.20375102054439,
+        53.15007092993374,
+        63.05912095527384
+      ],
+      "detection_class": "Dove Deodorant",
+      "detection_confidence": 0.9814453125,
+      "detection_bbox_xyxy": [
+        346.5,
+        84.875,
+        429.5,
+        170.625
+      ],
+      "stereo_left": "Stereo_Left_0002.png",
+      "stereo_right": "Stereo_Right_0002.png",
+      "overhead": "Overhead_0002.png",
+      "disparity": "disparity_0002.npz",
+      "points_cam": "points_cam_0002.npz",
+      "left_overlay": "left_overlay_0002.png"
+    },
+    {
+      "object_i": 3,
+      "class_name": "Lays Chips",
+      "pick_xy_mm": [
+        260.07693753540656,
+        170.79571194977427
+      ],
+      "pick_z_mm": 7.3483883890020465,
+      "pick_grasp_z_mm": 134.84838838900205,
+      "pick_phi_deg": 46.831038192687686,
+      "place_xy_mm": [
+        162.9475041604089,
+        753.4692691295563
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -117.72653516747266,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        260.07693753540656,
+        170.79571194977427,
+        7.3483883890020465
+      ],
+      "raw_box_size_xyz_mm": [
+        149.28098432409618,
+        121.47501213322148,
+        30.2486183045061
+      ],
+      "padded_box_center_xyz_mm": [
+        162.9475041604089,
+        753.4692691295563,
+        -102.60222601521961
+      ],
+      "padded_box_size_xyz_mm": [
+        149.28098432409618,
+        121.47501213322148,
+        70.2486183045061
+      ],
+      "detection_class": "Lays Chips",
+      "detection_confidence": 0.95654296875,
+      "detection_bbox_xyxy": [
+        297.75,
+        45.125,
+        432.25,
+        174.5
+      ],
+      "stereo_left": "Stereo_Left_0003.png",
+      "stereo_right": "Stereo_Right_0003.png",
+      "overhead": "Overhead_0003.png",
+      "disparity": "disparity_0003.npz",
+      "points_cam": "points_cam_0003.npz",
+      "left_overlay": "left_overlay_0003.png"
+    },
+    {
+      "object_i": 4,
+      "class_name": "Chex Mix",
+      "pick_xy_mm": [
+        231.13153851627806,
+        283.7598729464895
+      ],
+      "pick_z_mm": -13.268158551032332,
+      "pick_grasp_z_mm": 114.23184144896767,
+      "pick_phi_deg": 143.30544073252693,
+      "place_xy_mm": [
+        162.9475041604089,
+        753.4692691295563
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -87.47791686296657,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        231.13153851627806,
+        283.7598729464895,
+        -13.268158551032332
+      ],
+      "raw_box_size_xyz_mm": [
+        148.2913540148961,
+        94.1577321542083,
+        24.22361868931876
+      ],
+      "padded_box_center_xyz_mm": [
+        162.9475041604089,
+        753.4692691295563,
+        -75.36610751830719
+      ],
+      "padded_box_size_xyz_mm": [
+        148.2913540148961,
+        94.1577321542083,
+        64.22361868931876
+      ],
+      "detection_class": "Chex Mix",
+      "detection_confidence": 0.56591796875,
+      "detection_bbox_xyxy": [
+        221.25,
+        120.5,
+        382.5,
+        212.5
+      ],
+      "stereo_left": "Stereo_Left_0004.png",
+      "stereo_right": "Stereo_Right_0004.png",
+      "overhead": "Overhead_0004.png",
+      "disparity": "disparity_0004.npz",
+      "points_cam": "points_cam_0004.npz",
+      "left_overlay": "left_overlay_0004.png"
+    },
+    {
+      "object_i": 5,
+      "class_name": "Carmex Lip Balm",
+      "pick_xy_mm": [
+        289.9397805944452,
+        243.03882699208077
+      ],
+      "pick_z_mm": -24.532047485461163,
+      "pick_grasp_z_mm": 102.96795251453884,
+      "pick_phi_deg": 171.07758377389172,
+      "place_xy_mm": [
+        162.9475041604089,
+        753.4692691295563
+      ],
+      "place_phi_deg": 0.0,
+      "destination_surface_z_mm": -63.25429817364781,
+      "place_result": "placed",
+      "raw_box_center_xyz_mm": [
+        289.9397805944452,
+        243.03882699208077,
+        -24.532047485461163
+      ],
+      "raw_box_size_xyz_mm": [
+        97.2536312519269,
+        60.611407225123145,
+        6.044858334636956
+      ],
+      "padded_box_center_xyz_mm": [
+        162.9475041604089,
+        753.4692691295563,
+        -60.23186900632933
+      ],
+      "padded_box_size_xyz_mm": [
+        97.2536312519269,
+        60.611407225123145,
+        46.044858334636956
+      ],
+      "detection_class": "Carmex Lip Balm",
+      "detection_confidence": 0.9775390625,
+      "detection_bbox_xyxy": [
+        262.75,
+        101.375,
+        364.25,
+        159.75
+      ],
+      "stereo_left": "Stereo_Left_0005.png",
+      "stereo_right": "Stereo_Right_0005.png",
+      "overhead": "Overhead_0005.png",
+      "disparity": "disparity_0005.npz",
+      "points_cam": "points_cam_0005.npz",
+      "left_overlay": "left_overlay_0005.png"
+    }
+  ],
+  "placed_boxes": [
+    {
+      "center_xyz_mm": [
+        162.9475041604089,
+        753.4692691295563,
+        -136.36326758373633
+      ],
+      "size_xyz_mm": [
+        125.89500832081781,
+        86.9385382591127,
+        37.27346483252733
+      ],
+      "label": "object1_placed"
+    },
+    {
+      "center_xyz_mm": [
+        257.9968835102722,
+        755.3635024649668,
+        -143.47043952236308
+      ],
+      "size_xyz_mm": [
+        104.20375102054439,
+        53.15007092993374,
+        23.059120955273837
+      ],
+      "label": "object2_placed"
+    },
+    {
+      "center_xyz_mm": [
+        162.9475041604089,
+        753.4692691295563,
+        -102.60222601521961
+      ],
+      "size_xyz_mm": [
+        149.28098432409618,
+        121.47501213322148,
+        30.2486183045061
+      ],
+      "label": "object3_stacked"
+    },
+    {
+      "center_xyz_mm": [
+        162.9475041604089,
+        753.4692691295563,
+        -75.36610751830719
+      ],
+      "size_xyz_mm": [
+        148.2913540148961,
+        94.1577321542083,
+        24.22361868931876
+      ],
+      "label": "object4_stacked"
+    },
+    {
+      "center_xyz_mm": [
+        162.9475041604089,
+        753.4692691295563,
+        -60.23186900632933
+      ],
+      "size_xyz_mm": [
+        97.2536312519269,
+        60.611407225123145,
+        6.044858334636956
+      ],
+      "label": "object5_stacked"
+    }
+  ]
+}

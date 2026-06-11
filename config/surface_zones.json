@@ -32,7 +32,7 @@
     "surface_z_mm": -155.0,
     "default_phi_deg": 0.0,
     "width_mm": 260.0,
-    "depth_mm": 150.0,
+    "depth_mm": 130.0,
     "notes": "Canonical bag scene pose for wet run, demos, and saved-photo validation. Update this file when the bag moves."
   }
 }

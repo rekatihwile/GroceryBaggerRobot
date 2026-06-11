@@ -26,7 +26,7 @@ from vision.torch_device import (
 )
 
 # Default fallback weights path (matches run_pickplace_fast.py YOLO_FALLBACK_WEIGHTS_PATH)
-_DEFAULT_FALLBACK = "best.pt"
+_DEFAULT_FALLBACK = "full_data.pt"
 
 
 # ------------------------------------------------------------------ #

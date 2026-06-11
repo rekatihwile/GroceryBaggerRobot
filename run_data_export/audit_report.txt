@@ -1,0 +1,277 @@
+========================================================================
+AUTONOMOUS GROCERY ROBOT — RUN AUDIT REPORT
+Generated: 2026-06-09T22:02:58.054276
+Total runs analyzed: 64
+========================================================================
+
+── OVERALL STATISTICS ──────────────────────────────────────────────
+  Total pick attempts:         454
+  Total placed (success):      404  (89.0%)
+  Total misses:                21  (4.6%)
+  Total pending (incomplete):  29  (6.4%)
+
+── RUNS BY DATE ────────────────────────────────────────────────────
+  2026-05-31: 26 runs | 262 picks | 237 placed (90.5%) | 12 misses
+  2026-06-08: 38 runs | 192 picks | 167 placed (87.0%) | 9 misses
+
+── PER-CLASS PERFORMANCE ──────────────────────────────────────────
+  Class                   Placed   Miss   Pend  Total  Success%  AvgConf%
+  ────────────────────────────────────────────────────────────────────
+  Bandaid                     73      1      2     76     96.1%     92.9%
+  Burts Bees                  48      4      6     58     82.8%     94.7%
+  Carmex Lip Balm             28      2      3     33     84.8%     90.6%
+  Chex Mix                    67      5      9     81     82.7%     95.2%
+  Dove Deodorant              61      5      5     71     85.9%     95.9%
+  Lays Chips                  50      2      0     52     96.2%     92.0%
+  Pringles                    77      2      4     83     92.8%     95.5%
+
+── RUNS WITH FAILURES (32 of 64) ──────────────────────────────
+  [20260531_152413]  1 pending, EARLY TERMINATION
+    → object_4 [Dove Deodorant]: PENDING  conf=0.967
+  [20260531_152747]  1 pending, EARLY TERMINATION
+    → object_1 [Dove Deodorant]: PENDING  conf=0.981
+  [20260531_154435]  1 pending, EARLY TERMINATION
+    → object_2 [Chex Mix]: PENDING  conf=0.978
+  [20260531_164143]  1 pending, EARLY TERMINATION
+    → object_9 [Pringles]: PENDING  conf=0.850
+  [20260531_165144]  2 pending, EARLY TERMINATION
+    → object_7 [Carmex Lip Balm]: PENDING  conf=0.833
+    → object_7 [Pringles]: PENDING  conf=0.658
+  [20260531_165708]  3 miss(es), 1 pending, EARLY TERMINATION
+    → object_4 [Dove Deodorant]: MISS  conf=0.979
+    → object_1 [Chex Mix]: MISS  conf=0.983
+    → object_2 [Dove Deodorant]: MISS  conf=0.961
+    → object_4 [Chex Mix]: PENDING  conf=0.975
+  [20260531_172135]  2 miss(es), 1 pending, EARLY TERMINATION
+    → object_3 [Chex Mix]: MISS  conf=0.935
+    → object_4 [Pringles]: MISS  conf=0.952
+    → object_7 [Carmex Lip Balm]: PENDING  conf=0.869
+  [20260531_173417]  1 pending, EARLY TERMINATION
+    → object_1 [Bandaid]: PENDING  conf=0.945
+  [20260531_173928]  4 miss(es)
+    → object_2 [Dove Deodorant]: MISS  conf=0.917
+    → object_4 [Chex Mix]: MISS  conf=0.986
+    → object_4 [Chex Mix]: MISS  conf=0.978
+    → object_7 [Carmex Lip Balm]: MISS  conf=0.976
+  [20260531_181952]  1 miss(es)
+    → object_1 [Chex Mix]: MISS  conf=0.981
+  [20260531_182310]  1 pending, EARLY TERMINATION
+    → object_7 [Carmex Lip Balm]: PENDING  conf=0.952
+  [20260531_182948]  1 pending, EARLY TERMINATION
+    → object_7 [Burts Bees]: PENDING  conf=0.978
+  [20260531_183430]  1 miss(es)
+    → object_2 [Carmex Lip Balm]: MISS  conf=0.965
+  [20260531_184606]  1 miss(es), 1 pending, EARLY TERMINATION
+    → object_1 [Dove Deodorant]: MISS  conf=0.974
+    → object_1 [Chex Mix]: PENDING  conf=0.984
+  [20260531_185404]  1 pending, EARLY TERMINATION
+    → object_3 [Pringles]: PENDING  conf=0.980
+  [20260608_094617]  1 pending, EARLY TERMINATION
+    → object_2 [Burts Bees]: PENDING  conf=0.979
+  [20260608_095512]  1 pending, EARLY TERMINATION
+    → object_3 [Pringles]: PENDING  conf=0.984
+  [20260608_103405]  1 miss(es), 2 pending, EARLY TERMINATION
+    → object_3 [Dove Deodorant]: PENDING  conf=0.979
+    → object_2 [Burts Bees]: MISS  conf=0.953
+    → object_4 [Chex Mix]: PENDING  conf=0.982
+  [20260608_104618]  1 miss(es), 1 pending, EARLY TERMINATION
+    → object_3 [Dove Deodorant]: MISS  conf=0.980
+    → object_5 [Burts Bees]: PENDING  conf=0.979
+  [20260608_105001]  1 pending, EARLY TERMINATION
+    → object_5 [Burts Bees]: PENDING  conf=0.976
+  [20260608_105831]  1 miss(es)
+    → object_1 [Burts Bees]: MISS  conf=0.977
+  [20260608_110148]  1 pending, EARLY TERMINATION
+    → object_2 [Chex Mix]: PENDING  conf=0.984
+  [20260608_112127]  1 miss(es)
+    → object_1 [Burts Bees]: MISS  conf=0.968
+  [20260608_112815]  1 miss(es), 1 pending, EARLY TERMINATION
+    → object_3 [Bandaid]: MISS  conf=0.961
+    → object_4 [Dove Deodorant]: PENDING  conf=0.982
+  [20260608_120428]  1 miss(es), 1 pending, EARLY TERMINATION
+    → object_3 [Burts Bees]: MISS  conf=0.960
+    → object_4 [Bandaid]: PENDING  conf=0.959
+  [20260608_120739]  1 pending, EARLY TERMINATION
+    → object_1 [Chex Mix]: PENDING  conf=0.968
+  [20260608_120929]  1 pending, EARLY TERMINATION
+    → object_1 [Chex Mix]: PENDING  conf=0.965
+  [20260608_121511]  1 pending, EARLY TERMINATION
+    → object_1 [Chex Mix]: PENDING  conf=0.958
+  [20260608_122405]  1 pending, EARLY TERMINATION
+    → object_2 [Burts Bees]: PENDING  conf=0.918
+  [20260608_122802]  1 pending, EARLY TERMINATION
+    → object_11 [Burts Bees]: PENDING  conf=0.791
+  [20260608_124212]  3 miss(es), 1 pending, EARLY TERMINATION
+    → object_5 [Pringles]: MISS  conf=0.955
+    → object_6 [Lays Chips]: MISS  conf=0.850
+    → object_8 [Lays Chips]: MISS  conf=0.609
+    → object_1 [Chex Mix]: PENDING  conf=0.904
+  [20260608_125935]  1 pending, EARLY TERMINATION
+    → object_10 [Dove Deodorant]: PENDING  conf=0.979
+
+── EARLY TERMINATION RUNS (27) ──────────────────────────────
+  [20260531_152413] 4 objects, 1 pending
+  [20260531_152747] 1 objects, 1 pending
+  [20260531_154435] 2 objects, 1 pending
+  [20260531_164143] 14 objects, 1 pending
+  [20260531_165144] 8 objects, 2 pending
+  [20260531_165708] 30 objects, 1 pending
+  [20260531_172135] 22 objects, 1 pending
+  [20260531_173417] 1 objects, 1 pending
+  [20260531_182310] 11 objects, 1 pending
+  [20260531_182948] 10 objects, 1 pending
+  [20260531_184606] 11 objects, 1 pending
+  [20260531_185404] 3 objects, 1 pending
+  [20260608_094617] 13 objects, 1 pending
+  [20260608_095512] 3 objects, 1 pending
+  [20260608_103405] 7 objects, 2 pending
+  [20260608_104618] 5 objects, 1 pending
+  [20260608_105001] 5 objects, 1 pending
+  [20260608_110148] 2 objects, 1 pending
+  [20260608_112815] 4 objects, 1 pending
+  [20260608_120428] 4 objects, 1 pending
+  [20260608_120739] 1 objects, 1 pending
+  [20260608_120929] 1 objects, 1 pending
+  [20260608_121511] 1 objects, 1 pending
+  [20260608_122405] 2 objects, 1 pending
+  [20260608_122802] 17 objects, 1 pending
+  [20260608_124212] 15 objects, 1 pending
+  [20260608_125935] 15 objects, 1 pending
+
+── RUN TIMING ──────────────────────────────────────────────────────
+  Earliest: 2026-05-31T14:58:54
+  Latest:   2026-06-08T12:59:35
+  Mean gap between runs (intra-session <60min): 7.0 min
+  Min: 1.3 min   Max: 57.1 min
+  Note: no within-run timing is stored in manifests.
+
+── OBJECTS PER RUN ─────────────────────────────────────────────────
+   1 objects: 9 run(s)
+   2 objects: 8 run(s)
+   3 objects: 5 run(s)
+   4 objects: 8 run(s)
+   5 objects: 6 run(s)
+   6 objects: 6 run(s)
+   7 objects: 3 run(s)
+   8 objects: 2 run(s)
+  10 objects: 1 run(s)
+  11 objects: 2 run(s)
+  12 objects: 1 run(s)
+  13 objects: 2 run(s)
+  14 objects: 2 run(s)
+  15 objects: 2 run(s)
+  16 objects: 1 run(s)
+  17 objects: 1 run(s)
+  20 objects: 1 run(s)
+  21 objects: 1 run(s)
+  22 objects: 1 run(s)
+  25 objects: 1 run(s)
+  30 objects: 1 run(s)
+  Mean: 7.09  Min: 1  Max: 30
+
+── PLACE SCENE BREAKDOWN ───────────────────────────────────────────
+  foundation_floor_future_aware: 37 run(s)
+  bag_local_aabb_joint: 27 run(s)
+
+========================================================================
+WATCHDOG ANOMALY REPORT
+========================================================================
+
+  WD-1: Grasp offset anomaly (pick_grasp_z - pick_z far from 127.5mm)
+  Flagged: 1 instance(s)
+    [20260608_122405]  obj_2 [Burts Bees]  offset=145.0mm (nominal 127.5mm, deviation=+17.5mm)
+
+  WD-2: Bag-state mismatch (placed_count != placed_boxes count)
+  Flagged: 25 instance(s)
+    [20260531_145854] []  placed_count=8 but placed_boxes=2 (delta=6). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_153023] []  placed_count=13 but placed_boxes=10 (delta=3). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_164143] []  placed_count=13 but placed_boxes=8 (delta=5). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_165708] []  placed_count=26 but placed_boxes=3 (delta=23). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_171358] []  placed_count=16 but placed_boxes=9 (delta=7). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_172135] []  placed_count=19 but placed_boxes=6 (delta=13). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_173928] []  placed_count=21 but placed_boxes=2 (delta=19). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_180309] []  placed_count=14 but placed_boxes=7 (delta=7). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_181952] []  placed_count=2 but placed_boxes=3 (delta=-1). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_182310] []  placed_count=10 but placed_boxes=6 (delta=4). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_182948] []  placed_count=9 but placed_boxes=6 (delta=3). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_183430] []  placed_count=20 but placed_boxes=7 (delta=13). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_184606] []  placed_count=9 but placed_boxes=2 (delta=7). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260531_185839] []  placed_count=20 but placed_boxes=11 (delta=9). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_094617] []  placed_count=12 but placed_boxes=1 (delta=11). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_103405] []  placed_count=4 but placed_boxes=3 (delta=1). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_104618] []  placed_count=3 but placed_boxes=4 (delta=-1). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_105831] []  placed_count=3 but placed_boxes=4 (delta=-1). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_112127] []  placed_count=1 but placed_boxes=2 (delta=-1). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_112815] []  placed_count=2 but placed_boxes=3 (delta=-1). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_120428] []  placed_count=2 but placed_boxes=3 (delta=-1). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_121814] []  placed_count=12 but placed_boxes=5 (delta=7). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_122802] []  placed_count=16 but placed_boxes=10 (delta=6). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_124212] []  placed_count=11 but placed_boxes=0 (delta=11). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+    [20260608_125935] []  placed_count=14 but placed_boxes=9 (delta=5). Possible bag-state reset or recovery pass not reflected in placed_boxes.
+
+  WD-3: class_name / detection_class mismatch
+  Flagged: 0 instance(s)
+
+  WD-4: Pick XY outside staging platform bounds
+  Flagged: 0 instance(s)
+
+  WD-5: Place XY outside bag bounds
+  Flagged: 0 instance(s)
+
+  WD-6: Degenerate AABB (<5mm dimension — bad stereo reconstruction)
+  Flagged: 2 instance(s)
+    [20260531_171358]  obj_7 [Carmex Lip Balm]  raw_box_size=[100.34, 63.48, 3.86]mm — axis [2] below 5.0mm threshold
+    [20260608_122802]  obj_4 [Carmex Lip Balm]  raw_box_size=[97.24, 62.38, 4.65]mm — axis [2] below 5.0mm threshold
+
+  WD-7: High-confidence miss (>97% conf, still missed — grasp failure)
+  Flagged: 9 instance(s)
+    [20260531_165708]  obj_4 [Dove Deodorant]  MISS with detection_confidence=0.9790 >= 0.97 (grasp failed despite confident detection)
+    [20260531_165708]  obj_1 [Chex Mix]  MISS with detection_confidence=0.9834 >= 0.97 (grasp failed despite confident detection)
+    [20260531_173928]  obj_4 [Chex Mix]  MISS with detection_confidence=0.9863 >= 0.97 (grasp failed despite confident detection)
+    [20260531_173928]  obj_4 [Chex Mix]  MISS with detection_confidence=0.9775 >= 0.97 (grasp failed despite confident detection)
+    [20260531_173928]  obj_7 [Carmex Lip Balm]  MISS with detection_confidence=0.9761 >= 0.97 (grasp failed despite confident detection)
+    [20260531_181952]  obj_1 [Chex Mix]  MISS with detection_confidence=0.9814 >= 0.97 (grasp failed despite confident detection)
+    [20260531_184606]  obj_1 [Dove Deodorant]  MISS with detection_confidence=0.9741 >= 0.97 (grasp failed despite confident detection)
+    [20260608_104618]  obj_3 [Dove Deodorant]  MISS with detection_confidence=0.9805 >= 0.97 (grasp failed despite confident detection)
+    [20260608_105831]  obj_1 [Burts Bees]  MISS with detection_confidence=0.9766 >= 0.97 (grasp failed despite confident detection)
+
+  WD-8: Duplicate pick site (same class, <30mm apart in same run)
+  Flagged: 9 instance(s)
+    [20260531_153023]  obj_3&8 [Pringles]  object_3 and object_8 both 'Pringles' picked 24.9mm apart (possible double-detection)
+    [20260531_165708]  obj_1&5 [Lays Chips]  object_1 and object_5 both 'Lays Chips' picked 24.1mm apart (possible double-detection)
+    [20260531_173928]  obj_1&2 [Bandaid]  object_1 and object_2 both 'Bandaid' picked 12.1mm apart (possible double-detection)
+    [20260531_173928]  obj_8&1 [Chex Mix]  object_8 and object_1 both 'Chex Mix' picked 29.4mm apart (possible double-detection)
+    [20260531_182310]  obj_3&3 [Chex Mix]  object_3 and object_3 both 'Chex Mix' picked 29.9mm apart (possible double-detection)
+    [20260531_182948]  obj_2&3 [Chex Mix]  object_2 and object_3 both 'Chex Mix' picked 24.2mm apart (possible double-detection)
+    [20260608_103405]  obj_3&3 [Dove Deodorant]  object_3 and object_3 both 'Dove Deodorant' picked 16.3mm apart (possible double-detection)
+    [20260608_121814]  obj_2&4 [Burts Bees]  object_2 and object_4 both 'Burts Bees' picked 21.7mm apart (possible double-detection)
+    [20260608_122802]  obj_9&10 [Lays Chips]  object_9 and object_10 both 'Lays Chips' picked 1.9mm apart (possible double-detection)
+
+  WD-9: Recovery sequence detected (object_i reset mid-run)
+  Flagged: 19 instance(s)
+    [20260531_145854] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[6]: 6→1
+    [20260531_153023] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[3]: 3→1
+    [20260531_164143] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[5]: 5→1
+    [20260531_165708] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[3]: 3→1; seq[9]: 6→1; seq[16]: 7→1; seq[23]: 7→1; seq[26]: 3→1
+    [20260531_171358] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[7]: 7→1
+    [20260531_172135] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[7]: 7→1; seq[15]: 8→1
+    [20260531_173928] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[9]: 9→1; seq[16]: 7→1; seq[23]: 7→1
+    [20260531_180309] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[7]: 7→1
+    [20260531_182310] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[4]: 4→1
+    [20260531_182948] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[3]: 3→1
+    [20260531_183430] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[7]: 7→1; seq[14]: 7→1
+    [20260531_184606] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[8]: 8→1
+    [20260531_185839] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[9]: 9→1
+    [20260608_094617] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[5]: 5→1; seq[11]: 6→1
+    [20260608_103405] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[3]: 3→1
+    [20260608_121814] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[6]: 6→1
+    [20260608_122802] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[6]: 6→1
+    [20260608_124212] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[14]: 14→1
+    [20260608_125935] []  object_i reset(s) detected — recovery pass triggered. Transitions: seq[8]: 11→3
+
+  Total watchdog flags: 65
+  Runs with no flags:   38 of 64
+
+========================================================================
+END OF REPORT
+========================================================================

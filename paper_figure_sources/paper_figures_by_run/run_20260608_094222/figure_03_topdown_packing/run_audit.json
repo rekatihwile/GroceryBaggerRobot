@@ -1,0 +1,10 @@
+{
+  "manifest_present": true,
+  "total_manifest_rows": 5,
+  "placed_rows": 5,
+  "rows_with_aabb_overlap": 1,
+  "rows_with_boundary_overflow": 0,
+  "rows_with_unmodeled_fallback": 0,
+  "planner_sequence_recorded": "bag_local_aabb_joint",
+  "authority": "manifest execution is ground truth; offline planner replay is explanatory only"
+}

@@ -1,0 +1,5 @@
+manifest_row,object_i,class_name,place_result,execution_classification,support_manifest_row,overlap_manifest_rows,inside_bag,target_x_mm,target_y_mm,destination_surface_z_mm,box_center_x_mm,box_center_y_mm,box_center_z_mm,box_size_x_mm,box_size_y_mm,box_size_z_mm
+1,1,Lays Chips,placed,manifest_executed_floor_with_boundary_overflow,,,False,210.0,755.0,-155.0,210.0,755.0,-79.0209560679653,379.6533078278853,249.15393601958166,151.9580878640694
+2,2,Pringles,placed,manifest_executed_floor_with_aabb_overlap,,1,True,210.0,755.0,-155.0,210.0,755.0,-107.02189340833047,59.77476809142203,54.22055769826333,95.95621318333905
+3,3,Burts Bees,placed,manifest_executed_supported_stack,1,,True,210.0,755.0,-3.041912135930602,210.0,755.0,7.202967256060228,70.32253841604422,58.957149414893536,20.48975878398166
+4,4,Bandaid,placed,manifest_executed_supported_stack,3,,True,210.0,755.0,17.44784664805106,210.0,755.0,35.00401801677499,123.52326706218543,88.04122118782063,35.11234273744787

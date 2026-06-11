@@ -1,0 +1,33 @@
+{
+  "object_i": 2,
+  "class_name": "Chex Mix",
+  "pick_xy_mm": [
+    268.2133161911712,
+    485.21887238088556
+  ],
+  "pick_z_mm": -22.26098598542447,
+  "pick_grasp_z_mm": 105.23901401457553,
+  "pick_phi_deg": 22.116876803215007,
+  "place_xy_mm": null,
+  "place_phi_deg": null,
+  "destination_surface_z_mm": null,
+  "place_result": "pending",
+  "raw_box_center_xyz_mm": null,
+  "raw_box_size_xyz_mm": null,
+  "padded_box_center_xyz_mm": null,
+  "padded_box_size_xyz_mm": null,
+  "detection_class": "Chex Mix",
+  "detection_confidence": 0.984375,
+  "detection_bbox_xyxy": [
+    55.5,
+    150.625,
+    233.5,
+    317.0
+  ],
+  "stereo_left": "Stereo_Left_0002.png",
+  "stereo_right": "Stereo_Right_0002.png",
+  "overhead": "Overhead_0002.png",
+  "disparity": "disparity_0002.npz",
+  "points_cam": "points_cam_0002.npz",
+  "left_overlay": "left_overlay_0002.png"
+}

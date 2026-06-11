@@ -12,7 +12,12 @@ from scripts.pick_validation_display import _hr, print_survey_candidate_summary
 from vision.burst_tracking import capture_burst_frames, cluster_burst_detections, run_yolo_on_burst
 from vision.pick_candidate_builder import CandidateDebug, SurveyState, build_candidate_from_detection, colorize_disparity
 from vision.pick_phi_resolver import resolve_pick_phi
-from vision.pick_xy_resolver import apply_xy_blend, match_overhead_xy_to_candidate
+from vision.pick_xy_resolver import (
+    OVERHEAD_MATCH_MODE,
+    apply_xy_blend,
+    match_overhead_xy_to_candidate,
+    match_overhead_xy_to_candidates_one_to_one,
+)
 from vision.raft_runner import RAFTStereoRunner
 from vision.yolo_segmenter import YOLODetection, YOLOSegmenter
 
@@ -39,6 +44,10 @@ RAFT_ONCE_PER_SURVEY: bool = True
 # using the overhead image for matching/display.
 OVERHEAD_FRESH_READ_DISCARD_FRAMES: int = 6
 OVERHEAD_FRESH_READ_DELAY_S: float = 0.02
+
+# When True, run_survey() prints elapsed time for each phase (burst capture,
+# YOLO, RAFT, overhead, candidate building).  Propagated from RunConfig by main().
+PROFILE_SURVEY_TIMING: bool = True
 
 
 def load_vision(device_info: Any) -> tuple[YOLOSegmenter, RAFTStereoRunner]:
@@ -82,6 +91,13 @@ def _match_overhead_to_candidates(
         return
 
     _hr("OVERHEAD MATCH", "-")
+    if OVERHEAD_MATCH_MODE == "one_to_one":
+        matched_list = match_overhead_xy_to_candidates_one_to_one(overhead_dets, candidate_debugs, bundle)
+        for dbg, matched_det in zip(candidate_debugs, matched_list):
+            resolve_pick_phi(dbg, matched_det, bundle)
+            apply_xy_blend(dbg, bundle)
+        return
+
     for dbg in candidate_debugs:
         matched_overhead_det = match_overhead_xy_to_candidate(overhead_dets, dbg, bundle)
         resolve_pick_phi(dbg, matched_overhead_det, bundle)
@@ -200,13 +216,21 @@ def run_survey(
     _hr("SURVEY REAL OBJECTS", "=")
     t0 = time.perf_counter()
 
+    _t = time.perf_counter()
     frames = capture_burst_frames(stereo, detector, stereo_calib, rectifier)
+    if PROFILE_SURVEY_TIMING:
+        print(f"[SURVEY TIMING] burst_capture={time.perf_counter() - _t:.3f}s  frames={len(frames)}")
     if not frames:
         return SurveyState([], [], [], [], None, [], 0)
 
+    _t = time.perf_counter()
     run_yolo_on_burst(yolo, frames)
+    if PROFILE_SURVEY_TIMING:
+        print(f"[SURVEY TIMING] yolo_burst={time.perf_counter() - _t:.3f}s")
+
     tracks, kept = cluster_burst_detections(frames)
 
+    _t = time.perf_counter()
     candidates: list[CandidateDebug] = _build_candidates_with_one_disparity(
         frames=frames,
         kept_tracks=kept,
@@ -215,18 +239,28 @@ def run_survey(
         robot=robot,
         bundle=bundle,
     )
+    if PROFILE_SURVEY_TIMING:
+        print(f"[SURVEY TIMING] raft_candidates={time.perf_counter() - _t:.3f}s  candidates={len(candidates)}")
 
     for idx, dbg in enumerate(candidates, start=1):
         dbg.candidate.index = idx
 
+    _t = time.perf_counter()
     if seed_overhead_frame is not None:
         # Reuse a frame captured by the miss-check burst immediately before this
         # survey — the platform scene hasn't changed, so capturing a fresh frame
-        # is redundant.  Flush the stale backlog anyway to keep the queue clean.
-        try:
-            overhead.read()  # discard one stale frame so backlog doesn't grow
-        except Exception:
-            pass
+        # is redundant.  Flush the full stale backlog (same count as the normal
+        # fresh-read path) so the overhead queue doesn't grow unbounded.
+        _seed_discard = max(0, int(OVERHEAD_FRESH_READ_DISCARD_FRAMES))
+        if _seed_discard > 0:
+            print(f"[OVERHEAD] flushing {_seed_discard} queued frame(s) after seed reuse")
+            for _ in range(_seed_discard):
+                try:
+                    overhead.read()
+                except Exception:
+                    break
+                if OVERHEAD_FRESH_READ_DELAY_S > 0.0:
+                    time.sleep(float(OVERHEAD_FRESH_READ_DELAY_S))
         overhead_frame = seed_overhead_frame
         overhead_dets = yolo.segment(overhead_frame)
         if TARGET_CLASS_NAMES:
@@ -253,8 +287,13 @@ def run_survey(
             overhead_frame = None
             overhead_dets = []
             print("[OVERHEAD] frame unavailable")
+    if PROFILE_SURVEY_TIMING:
+        print(f"[SURVEY TIMING] overhead={time.perf_counter() - _t:.3f}s")
 
+    _t = time.perf_counter()
     _match_overhead_to_candidates(overhead_dets, candidates, bundle)
+    if PROFILE_SURVEY_TIMING:
+        print(f"[SURVEY TIMING] overhead_match={time.perf_counter() - _t:.3f}s")
 
     print_survey_candidate_summary(candidates)
     print(f"[SURVEY] done in {time.perf_counter() - t0:.2f}s")

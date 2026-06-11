@@ -1,0 +1,52 @@
+{
+  "object_i": 6,
+  "class_name": "Burts Bees",
+  "pick_xy_mm": [
+    210.57131964894484,
+    354.7048525822473
+  ],
+  "pick_z_mm": -37.53484334768001,
+  "pick_grasp_z_mm": 89.96515665231999,
+  "pick_phi_deg": 120.69122090034308,
+  "place_xy_mm": [
+    222.17852814175401,
+    754.718162545431
+  ],
+  "place_phi_deg": 0.0,
+  "destination_surface_z_mm": -55.62182020317991,
+  "place_result": "placed",
+  "raw_box_center_xyz_mm": [
+    210.57131964894484,
+    354.7048525822473,
+    -37.53484334768001
+  ],
+  "raw_box_size_xyz_mm": [
+    86.85231983372401,
+    57.34389286326959,
+    19.175479627321955
+  ],
+  "padded_box_center_xyz_mm": [
+    222.17852814175401,
+    754.718162545431,
+    -46.034080389518934
+  ],
+  "padded_box_size_xyz_mm": [
+    86.85231983372401,
+    57.34389286326959,
+    59.175479627321955
+  ],
+  "detection_class": "Burts Bees",
+  "detection_confidence": 0.98291015625,
+  "detection_bbox_xyxy": [
+    220.25,
+    184.75,
+    316.25,
+    253.0
+  ],
+  "stereo_left": "Stereo_Left_0006.png",
+  "stereo_right": "Stereo_Right_0006.png",
+  "overhead": "Overhead_0006.png",
+  "disparity": "disparity_0006.npz",
+  "points_cam": "points_cam_0006.npz",
+  "left_overlay": "left_overlay_0006.png"
+}

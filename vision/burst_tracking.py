@@ -20,6 +20,19 @@ BURST_CLUSTER_MAX_CENTROID_PX: float = 75.0
 BURST_REQUIRE_SAME_CLASS: bool = True
 TARGET_CLASS_NAMES: list[str] = []
 
+# Stereo-camera pre-flush.  DirectShow (CAP_DSHOW) buffers frames continuously
+# while no reader drains them.  During the miss-check burst and place descent
+# the stereo camera is idle but still filling its internal queue, so the first
+# frames read in the next survey are stale.  Discard this many frames (and wait
+# STEREO_BURST_PREFRESH_DELAY_S between each) before starting the YOLO burst.
+# Set to 0 to restore the old (no-flush) behaviour.
+STEREO_BURST_PREFRESH_COUNT: int = 4
+STEREO_BURST_PREFRESH_DELAY_S: float = 0.01
+
+# When True, burst_tracking prints elapsed time for the prefresh drain and
+# each frame capture so per-phase timing is visible.
+PROFILE_SURVEY_TIMING: bool = True
+
 
 @dataclass
 class BurstFrame:
@@ -76,6 +89,20 @@ def capture_burst_frames(
     stereo_calib: dict,
     rectifier: Any,
 ) -> list[BurstFrame]:
+    # Drain the stereo camera's DirectShow buffer before starting the burst so
+    # that frames from during the previous miss-check / place descent aren't
+    # mixed into the new survey.
+    _prefresh = max(0, int(STEREO_BURST_PREFRESH_COUNT))
+    if _prefresh > 0:
+        _t_pre = time.perf_counter()
+        print(f"[BURST] flushing {_prefresh} stale stereo frame(s) before burst")
+        for _fi in range(_prefresh):
+            stereo.read_pair()
+            if STEREO_BURST_PREFRESH_DELAY_S > 0.0:
+                time.sleep(float(STEREO_BURST_PREFRESH_DELAY_S))
+        if PROFILE_SURVEY_TIMING:
+            print(f"[BURST TIMING] stereo_prefresh={time.perf_counter() - _t_pre:.3f}s  ({_prefresh} frames)")
+
     frames: list[BurstFrame] = []
     for frame_i in range(int(BURST_COUNT)):
         stereo_tags, left_raw, right_raw, _, _ = read_stereo_tags_once(

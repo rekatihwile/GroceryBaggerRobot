@@ -1,0 +1,8 @@
+source,target,condition
+survey,select,scene
+select,pick,target
+pick,watchdog,pre-release
+watchdog,place,item absent
+watchdog,recover,item still present
+recover,survey,retry
+place,survey,next item

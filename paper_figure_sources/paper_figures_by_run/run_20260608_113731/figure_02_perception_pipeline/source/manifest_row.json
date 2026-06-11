@@ -1,0 +1,52 @@
+{
+  "object_i": 2,
+  "class_name": "Chex Mix",
+  "pick_xy_mm": [
+    92.98140721758253,
+    228.8328070355078
+  ],
+  "pick_z_mm": -22.15601616503534,
+  "pick_grasp_z_mm": 105.34398383496466,
+  "pick_phi_deg": 135.73820187080025,
+  "place_xy_mm": [
+    159.81396774882913,
+    773.7715538240552
+  ],
+  "place_phi_deg": 0.0,
+  "destination_surface_z_mm": -155.0,
+  "place_result": "placed",
+  "raw_box_center_xyz_mm": [
+    92.98140721758253,
+    228.8328070355078,
+    -22.15601616503534
+  ],
+  "raw_box_size_xyz_mm": [
+    142.98907103421564,
+    93.71740788165822,
+    25.11263456569631
+  ],
+  "padded_box_center_xyz_mm": [
+    159.81396774882913,
+    773.7715538240552,
+    -142.44368271715183
+  ],
+  "padded_box_size_xyz_mm": [
+    142.98907103421564,
+    93.71740788165822,
+    65.11263456569631
+  ],
+  "detection_class": "Chex Mix",
+  "detection_confidence": 0.98193359375,
+  "detection_bbox_xyxy": [
+    320.5,
+    163.125,
+    483.75,
+    296.0
+  ],
+  "stereo_left": "Stereo_Left_0002.png",
+  "stereo_right": "Stereo_Right_0002.png",
+  "overhead": "Overhead_0002.png",
+  "disparity": "disparity_0002.npz",
+  "points_cam": "points_cam_0002.npz",
+  "left_overlay": "left_overlay_0002.png"
+}

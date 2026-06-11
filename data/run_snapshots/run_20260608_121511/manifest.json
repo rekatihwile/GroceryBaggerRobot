@@ -1,0 +1,41 @@
+{
+  "run_timestamp": "20260608_121511",
+  "script": "autonomous_missed_pick_recovery.py",
+  "place_planning_sequence": "foundation_floor_future_aware",
+  "objects": [
+    {
+      "object_i": 1,
+      "class_name": "Chex Mix",
+      "pick_xy_mm": [
+        83.57667373309454,
+        459.43190818380907
+      ],
+      "pick_z_mm": -15.854876598168444,
+      "pick_grasp_z_mm": 111.64512340183155,
+      "pick_phi_deg": 152.4077855368615,
+      "place_xy_mm": null,
+      "place_phi_deg": null,
+      "destination_surface_z_mm": null,
+      "place_result": "pending",
+      "raw_box_center_xyz_mm": null,
+      "raw_box_size_xyz_mm": null,
+      "padded_box_center_xyz_mm": null,
+      "padded_box_size_xyz_mm": null,
+      "detection_class": "Chex Mix",
+      "detection_confidence": 0.95849609375,
+      "detection_bbox_xyxy": [
+        136.625,
+        273.5,
+        339.75,
+        404.5
+      ],
+      "stereo_left": "Stereo_Left_0001.png",
+      "stereo_right": "Stereo_Right_0001.png",
+      "overhead": "Overhead_0001.png",
+      "disparity": "disparity_0001.npz",
+      "points_cam": "points_cam_0001.npz",
+      "left_overlay": "left_overlay_0001.png"
+    }
+  ],
+  "placed_boxes": []
+}

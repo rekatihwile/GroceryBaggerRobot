@@ -1,0 +1,16 @@
+{
+  "class_name": "Carmex Lip Balm",
+  "place_result": "pending",
+  "pick_xy_mm": [
+    193.24731664367147,
+    140.41184632054205
+  ],
+  "pick_phi_deg": 11.264757968997742,
+  "place_xy_mm": null,
+  "place_phi_deg": null,
+  "destination_surface_z_mm": null,
+  "raw_box_center_xyz_mm": null,
+  "raw_box_size_xyz_mm": null,
+  "padded_box_center_xyz_mm": null,
+  "padded_box_size_xyz_mm": null
+}

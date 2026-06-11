@@ -1,0 +1,4 @@
+MISSED/PENDING/SKIPPED MANIFEST ROWS
+========================================
+manifest_row=7 object_i=7 class=Carmex Lip Balm result='pending' reason=place_result=pending
+manifest_row=8 object_i=7 class=Pringles result='pending' reason=place_result=pending

@@ -17,6 +17,11 @@ from vision.yolo_segmenter import YOLODetection
 OVERHEAD_MATCH_MAX_DIST_MM: float = 140.0
 OVERHEAD_MATCH_PREFER_SAME_CLASS: bool = True
 
+# "legacy"     — original per-candidate nearest match (one overhead det can match many stereo)
+# "one_to_one" — new bijective matching: each OH det and each stereo cand matched at most once
+OVERHEAD_MATCH_MODE: str = "legacy"
+OVERHEAD_MATCH_SCORE_MODE: str = "bounded_distance"  # "bounded_distance" or "inverse_distance"
+
 
 def project_overhead_centroid_to_robot_xy(
     centroid_px: np.ndarray,
@@ -148,6 +153,124 @@ def match_overhead_xy_to_candidate(
     reason = "no projected overhead candidate" if best_det is None else f"best_dist={best_dist:.1f} > {OVERHEAD_MATCH_MAX_DIST_MM:.1f}"
     print(f"[MATCH] cand[{cand.index}] {cand.yolo.class_name:14s} -> NO MATCH ({reason})")
     return None
+
+
+def _oh_match_score(dist_mm: float) -> float:
+    if OVERHEAD_MATCH_SCORE_MODE == "inverse_distance":
+        return 1.0 / max(float(dist_mm), 1e-6)
+    return max(0.0, 1.0 - float(dist_mm) / max(1e-6, float(OVERHEAD_MATCH_MAX_DIST_MM)))
+
+
+def match_overhead_xy_to_candidates_one_to_one(
+    overhead_dets: list[YOLODetection],
+    candidate_debugs: list[CandidateDebug],
+    bundle: dict,
+) -> list[YOLODetection | None]:
+    """Bijective overhead→stereo matching: each detection and each candidate matched at most once.
+
+    Sets candidate.overhead_centroid_px / overhead_bbox_px and debug.overhead_xy_mm on
+    matched candidates exactly like match_overhead_xy_to_candidate() does for legacy mode.
+    The caller is responsible for calling resolve_pick_phi() and apply_xy_blend() afterward.
+    Prints an audit table.
+    """
+    if not overhead_dets or not candidate_debugs:
+        print("[OVERHEAD MATCH ONE-TO-ONE] no overhead detections or no candidates")
+        return [None] * len(candidate_debugs)
+
+    n_oh = len(overhead_dets)
+    n_st = len(candidate_debugs)
+
+    # Build all pairwise distances and scores
+    dist_matrix: list[list[float]] = [[float("inf")] * n_st for _ in range(n_oh)]
+    xy_matrix: list[list[np.ndarray | None]] = [[None] * n_st for _ in range(n_oh)]
+    same_class_matrix: list[list[bool]] = [[False] * n_st for _ in range(n_oh)]
+
+    for oh_i, oh_det in enumerate(overhead_dets):
+        for st_j, dbg in enumerate(candidate_debugs):
+            cand = dbg.candidate
+            stereo_z = max(0.0, float(cand.object_robot_xyz_raw[2]))
+            try:
+                xy, *_ = project_overhead_centroid_to_robot_xy(oh_det.centroid_px, stereo_z, bundle)
+                stereo_xy = np.asarray(cand.object_robot_xyz_raw[:2], dtype=np.float64).reshape(2)
+                dist = float(np.linalg.norm(xy - stereo_xy))
+                dist_matrix[oh_i][st_j] = dist
+                xy_matrix[oh_i][st_j] = xy.copy()
+                same_class_matrix[oh_i][st_j] = (
+                    str(oh_det.class_name) == str(cand.yolo.class_name)
+                )
+            except Exception:
+                pass
+
+    # Hungarian-style greedy: prefer same-class pairs first, then by best score
+    # Build candidate pairs sorted by score (best first)
+    pairs: list[tuple[float, bool, int, int]] = []
+    for oh_i in range(n_oh):
+        for st_j in range(n_st):
+            d = dist_matrix[oh_i][st_j]
+            if d > float(OVERHEAD_MATCH_MAX_DIST_MM):
+                continue
+            score = _oh_match_score(d)
+            same = same_class_matrix[oh_i][st_j]
+            # same-class pairs sort first within the same score range
+            pairs.append((-score, not same, oh_i, st_j))
+    pairs.sort()  # ascending: best (lowest -score) first; same-class (False) before diff-class
+
+    matched_oh: set[int] = set()
+    matched_st: set[int] = set()
+    assignments: dict[int, tuple[int, float, bool, np.ndarray]] = {}  # st_j → (oh_i, dist, same, xy)
+
+    for _neg_score, _not_same, oh_i, st_j in pairs:
+        if oh_i in matched_oh or st_j in matched_st:
+            continue
+        d = dist_matrix[oh_i][st_j]
+        assignments[st_j] = (oh_i, d, same_class_matrix[oh_i][st_j], xy_matrix[oh_i][st_j])
+        matched_oh.add(oh_i)
+        matched_st.add(st_j)
+
+    # Apply assignments and print audit table
+    print("[OVERHEAD MATCH ONE-TO-ONE]")
+    results: list[YOLODetection | None] = [None] * n_st
+    for st_j, dbg in enumerate(candidate_debugs):
+        cand = dbg.candidate
+        if st_j in assignments:
+            oh_i, dist, same, xy = assignments[st_j]
+            oh_det = overhead_dets[oh_i]
+            score = _oh_match_score(dist)
+            class_tag = "same" if same else "diff"
+            print(
+                f"  OH[{oh_i}] {oh_det.class_name:14s} -> "
+                f"ST[{getattr(cand, 'index', st_j)}] {cand.yolo.class_name:14s} "
+                f"dist={dist:.1f}mm score={score:.3f} class={class_tag}"
+            )
+            cand.overhead_centroid_px = np.asarray(oh_det.centroid_px, dtype=np.float64).reshape(2)
+            cand.overhead_bbox_px = tuple(float(v) for v in oh_det.bbox)
+            dbg.overhead_xy_mm = xy.copy() if xy is not None else None
+            if not same:
+                print(f"    NOTE: class mismatch ({oh_det.class_name} vs {cand.yolo.class_name})")
+            results[st_j] = oh_det
+        else:
+            # Find why: was best distance too far or already taken?
+            best_d = min((dist_matrix[oh_i][st_j] for oh_i in range(n_oh)), default=float("inf"))
+            if best_d > float(OVERHEAD_MATCH_MAX_DIST_MM):
+                note = f"best_dist={best_d:.1f}mm > {OVERHEAD_MATCH_MAX_DIST_MM:.1f}"
+            else:
+                note = "best match already assigned to another candidate"
+            print(
+                f"  ST[{getattr(cand, 'index', st_j)}] {cand.yolo.class_name:14s} "
+                f"-> stereo_only_no_overhead ({note})"
+            )
+
+    for oh_i, oh_det in enumerate(overhead_dets):
+        if oh_i not in matched_oh:
+            best_d = min((dist_matrix[oh_i][st_j] for st_j in range(n_st)), default=float("inf"))
+            print(
+                f"  OH[{oh_i}] {oh_det.class_name:14s} -> no match: "
+                f"best_dist={best_d:.1f}mm > {OVERHEAD_MATCH_MAX_DIST_MM:.1f}"
+                if best_d > float(OVERHEAD_MATCH_MAX_DIST_MM)
+                else f"  OH[{oh_i}] {oh_det.class_name:14s} -> no match: all stereo candidates already matched"
+            )
+
+    return results
 
 
 def match_overhead_xy_to_candidates(

@@ -18,8 +18,21 @@ if str(_REPO_ROOT) not in sys.path:
 
 from config.gripper.gripper_geometry_config import DEFAULT_GRIPPER_GEOMETRY
 from config.place import DEFAULT_PLACE, load_place_scene
+from scripts.capstone.publication_config import (
+    DEFAULT_PUBLICATION_DPI,
+    output_dir_for_images,
+    save_figure_bundle,
+)
 
-TRAINING_IMAGES_DIR = _REPO_ROOT / "Training_Images"
+# VS Code IDE defaults.
+# Copy/paste your image directory here (Windows raw string recommended), e.g.
+# r"C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\Training_Images"
+IDE_DEFAULT_IMAGES_DIR_STR: str | None = r"C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\data\run_snapshots\run_20260531_165144"
+TRAINING_IMAGES_DIR = Path(IDE_DEFAULT_IMAGES_DIR_STR) if IDE_DEFAULT_IMAGES_DIR_STR else (_REPO_ROOT / "Training_Images")
+
+# Optional explicit output override. None uses paper_figure_sources.
+IDE_DEFAULT_SAVE_OUTPUT_DIR_STR: str | None = None
+
 STEREO_CALIB_PATH = _REPO_ROOT / "stereo_calibration.npz"
 BUNDLE_PATH = _REPO_ROOT / "robot_calibration_bundle.npz"
 YOLO_WEIGHTS_PATH = _REPO_ROOT / "yolo_weights/full_data.pt"
@@ -50,7 +63,7 @@ PLANNER_LAYER_ACCEPT_SCORE = 0.10
 SUPPORT_RATIO_THRESHOLD = 0.72
 MAX_OVERHANG_RATIO = 0.28
 
-SAVE_OUTPUT_DIR = Path(__file__).resolve().parent
+SAVE_OUTPUT_DIR = Path(IDE_DEFAULT_SAVE_OUTPUT_DIR_STR) if IDE_DEFAULT_SAVE_OUTPUT_DIR_STR else (_REPO_ROOT / "paper_figure_sources/global/interactive_packing")
 DEBUG_OUTPUT_DIR = Path(__file__).resolve().parent / "interactive_packing_demo_debug"
 ENABLE_GRIPPER_COLLISION_CHECK = False
 GRIPPER_FINGER_LENGTH_MM = float(DEFAULT_GRIPPER_GEOMETRY.FINGER_LENGTH_MM)
@@ -1186,9 +1199,16 @@ class PackingDemo:
         print("[DEMO] reset")
 
     def _save(self):
-        out = SAVE_OUTPUT_DIR / f"interactive_packing_demo_{self.pair_index:04d}_step{len(self.state.placed):02d}.png"
-        self.fig.savefig(str(out), dpi=110, bbox_inches="tight", facecolor=self.fig.get_facecolor())
-        print(f"[SAVE] {out}")
+        stem = SAVE_OUTPUT_DIR / (
+            f"interactive_packing_state_pair_{self.pair_index:04d}_step_{len(self.state.placed):02d}"
+        )
+        for path in save_figure_bundle(
+            self.fig,
+            stem,
+            dpi=DEFAULT_PUBLICATION_DPI,
+            facecolor=self.fig.get_facecolor(),
+        ):
+            print(f"[SAVE] {path}")
 
     def _render(self):
         for ax in (self.ax_plat, self.ax_bag):
@@ -1288,8 +1308,6 @@ class PackingDemo:
                 if len(placed.info.point_colors_rgb) == len(placed.info.points_robot):
                     samp_colors = placed.info.point_colors_rgb if sample_idx is None else placed.info.point_colors_rgb[sample_idx]
                     ax3.scatter(shifted[:, 0], shifted[:, 1], shifted[:, 2], c=samp_colors, s=0.6, alpha=0.45)
-                else:
-                    ax3.scatter(shifted[:, 0], shifted[:, 1], shifted[:, 2], c=[placed.info.color], s=0.6, alpha=0.45)
             _draw_box_3d(ax3, placed.raw_box, placed.info.color, alpha_face=0.15, ls="-")
             _draw_box_3d(ax3, placed.padded_box, placed.info.color, alpha_face=0.0, ls="--", alpha_edge=0.40)
             ax3.text(
@@ -1361,9 +1379,12 @@ def _print_final_validation_summary(state: DemoState) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global SAVE_OUTPUT_DIR
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--images", default=str(TRAINING_IMAGES_DIR))
     parser.add_argument("--index", type=int, default=None)
+    parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--validate-all", action="store_true")
     parser.add_argument("--no-gui", action="store_true")
     parser.add_argument("--debug-pngs", action="store_true")
@@ -1381,6 +1402,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     pairs_dir = Path(args.images)
+    SAVE_OUTPUT_DIR = output_dir_for_images(pairs_dir, args.out_dir) / "interactive_packing"
+    SAVE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     lr = re.compile(r"Stereo_Left_(\d+)\.(jpg|jpeg|png)$", re.IGNORECASE)
     rr = re.compile(r"Stereo_Right_(\d+)\.(jpg|jpeg|png)$", re.IGNORECASE)
     lefts, rights = {}, {}

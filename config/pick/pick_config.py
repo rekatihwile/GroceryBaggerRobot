@@ -77,11 +77,11 @@ class PickConfig:
     # Shifts the grasp point slightly toward the local highest region of the
     # object so the gripper lands on the widest/most stable part.
     USE_LOCAL_HEIGHT_AWARE_GRASP_XY: bool = True
-    LOCAL_GRASP_RADIUS_MM: float = 50.0
-    LOCAL_GRASP_TOP_REGION_PERCENTILE: float = 90.0
-    LOCAL_GRASP_HEIGHT_DELTA_THRESHOLD_MM: float = 5.0
-    LOCAL_GRASP_BLEND_WEIGHT: float = 0.35
-    LOCAL_GRASP_MAX_SHIFT_MM: float = 30.0
+    LOCAL_GRASP_RADIUS_MM: float = 1000.0
+    LOCAL_GRASP_TOP_REGION_PERCENTILE: float = 95.0
+    LOCAL_GRASP_HEIGHT_DELTA_THRESHOLD_MM: float = 1.0
+    LOCAL_GRASP_BLEND_WEIGHT: float = 0.2
+    LOCAL_GRASP_MAX_SHIFT_MM: float = 100.0
 
     # ── Display (for pick_one_place_one interactive viewer) ───────────────
     COMBINED_WIDTH_PX: int = 1280

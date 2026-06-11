@@ -82,11 +82,17 @@ class PlaceConfig:
     PAD_Z_MM: float = 20.0
 
     # Plug-in planning sequence for wet runs and dry validation.
-    # "bag_local_aabb_joint" uses the deterministic bag-local planner to jointly
-    # choose the next object and bag target.
-    # "volume_topdown_safe" is the conservative fallback: volume order, padded
-    # top-down AABB footprints, no future item/weight/fragility scoring.
-    PLACE_PLANNING_SEQUENCE_NAME: str = "bag_local_aabb_joint"
+    # "bag_local_aabb_joint"          — deterministic bag-local planner; jointly chooses the
+    #                                   next object and bag target using weight/fragility scoring.
+    # "volume_topdown_safe"           — conservative fallback: volume order, padded top-down
+    #                                   AABB footprints, no future item scoring.
+    # "foundation_floor_future_aware" — prioritizes legal bag-floor placement over stacking.
+    #                                   Among floor placements, it maximises future floor
+    #                                   feasibility, then selects strong low-fragility /
+    #                                   high-weight foundation objects using
+    #                                   config/grocery_spec.json.
+    #                                   Set via env: GB_PLACE_PLANNING_SEQUENCE=foundation_floor_future_aware
+    PLACE_PLANNING_SEQUENCE_NAME: str = "foundation_floor_future_aware"
     # Nominal usable bag height for bag-local planning experiments.
     PLACE_BAG_LOCAL_HEIGHT_MM: float = 250.0
 

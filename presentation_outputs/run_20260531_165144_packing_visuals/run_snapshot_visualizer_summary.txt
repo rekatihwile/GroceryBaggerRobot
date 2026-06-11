@@ -1,0 +1,36 @@
+RUN SNAPSHOT VISUALIZER SUMMARY
+========================================
+manifest: C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\data\run_snapshots\run_20260531_165144\manifest.json
+run_timestamp: 20260531_165144
+script: autonomous_missed_pick_recovery.py
+place_planning_sequence: bag_local_aabb_joint
+total manifest object rows: 8
+placed rows visualized: 6
+placed_boxes count in manifest: 6
+bag: New Bag Test
+bag source: config\surface_zones.json
+bag bounds x=[80.0,340.0] y=[690.0,820.0] z=[-175.0,75.0]
+
+Placed rows:
+  placement 01 manifest_row=01 object_i=1 class=Pringles pointcloud=no
+  placement 02 manifest_row=02 object_i=2 class=Bandaid pointcloud=no
+  placement 03 manifest_row=03 object_i=3 class=Lays Chips pointcloud=no
+  placement 04 manifest_row=04 object_i=4 class=Chex Mix pointcloud=no
+  placement 05 manifest_row=05 object_i=5 class=Dove Deodorant pointcloud=no
+  placement 06 manifest_row=06 object_i=6 class=Burts Bees pointcloud=no
+
+Normalization notes:
+  row 1: raw AABB center normalized from pick pose (105.9,106.0) to placed pose (140.2,732.9)
+  row 2: raw AABB center normalized from pick pose (279.4,90.7) to placed pose (247.2,748.4)
+  row 3: raw AABB center normalized from pick pose (92.2,126.0) to placed pose (247.2,748.4)
+  row 4: raw AABB center normalized from pick pose (247.2,339.4) to placed pose (247.2,748.4)
+  row 5: raw AABB center normalized from pick pose (106.9,354.1) to placed pose (247.2,748.4)
+  row 6: raw AABB center normalized from pick pose (157.8,457.4) to placed pose (247.2,748.4)
+
+Skipped/audit rows:
+  manifest_row=7 object_i=7 class=Carmex Lip Balm result='pending' reason=place_result=pending
+  manifest_row=8 object_i=7 class=Pringles result='pending' reason=place_result=pending
+
+Outputs:
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260531_165144_packing_visuals\bag_aabb_topdown.png
+  C:\Users\elipp\OneDrive\Documents\Grocery_Buildup\presentation_outputs\run_20260531_165144_packing_visuals\bag_aabb_topdown.svg

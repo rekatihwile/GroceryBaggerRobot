@@ -1,0 +1,52 @@
+{
+  "object_i": 1,
+  "class_name": "Pringles",
+  "pick_xy_mm": [
+    107.84524659198797,
+    442.53644202511316
+  ],
+  "pick_z_mm": 58.20644515151081,
+  "pick_grasp_z_mm": 185.70644515151082,
+  "pick_phi_deg": 92.50079126445792,
+  "place_xy_mm": [
+    289.74223695270115,
+    781.6131024384958
+  ],
+  "place_phi_deg": 0.0,
+  "destination_surface_z_mm": -155.0,
+  "place_result": "placed",
+  "raw_box_center_xyz_mm": [
+    107.84524659198797,
+    442.53644202511316,
+    58.20644515151081
+  ],
+  "raw_box_size_xyz_mm": [
+    60.51552590540224,
+    56.77379487699164,
+    81.29016095073882
+  ],
+  "padded_box_center_xyz_mm": [
+    289.74223695270115,
+    781.6131024384958,
+    -114.35491952463059
+  ],
+  "padded_box_size_xyz_mm": [
+    60.51552590540224,
+    56.77379487699164,
+    121.29016095073882
+  ],
+  "detection_class": "Pringles",
+  "detection_confidence": 0.98828125,
+  "detection_bbox_xyxy": [
+    173.875,
+    223.5,
+    275.5,
+    349.5
+  ],
+  "stereo_left": "Stereo_Left_0001.png",
+  "stereo_right": "Stereo_Right_0001.png",
+  "overhead": "Overhead_0001.png",
+  "disparity": "disparity_0001.npz",
+  "points_cam": "points_cam_0001.npz",
+  "left_overlay": "left_overlay_0001.png"
+}

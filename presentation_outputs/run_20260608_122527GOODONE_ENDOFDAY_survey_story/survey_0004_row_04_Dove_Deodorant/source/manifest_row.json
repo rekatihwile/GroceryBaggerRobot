@@ -1,0 +1,52 @@
+{
+  "object_i": 4,
+  "class_name": "Dove Deodorant",
+  "pick_xy_mm": [
+    247.15643866670533,
+    369.3709706373638
+  ],
+  "pick_z_mm": -24.137396567905228,
+  "pick_grasp_z_mm": 103.36260343209477,
+  "pick_phi_deg": 86.70371962281193,
+  "place_xy_mm": [
+    252.2806519886986,
+    757.8760029726974
+  ],
+  "place_phi_deg": 0.0,
+  "destination_surface_z_mm": -117.28224061296038,
+  "place_result": "placed",
+  "raw_box_center_xyz_mm": [
+    247.15643866670533,
+    369.3709706373638,
+    -24.137396567905228
+  ],
+  "raw_box_size_xyz_mm": [
+    54.69616187174205,
+    48.20564295944114,
+    18.238196911537656
+  ],
+  "padded_box_center_xyz_mm": [
+    252.2806519886986,
+    757.8760029726974,
+    -108.16314215719154
+  ],
+  "padded_box_size_xyz_mm": [
+    54.69616187174205,
+    48.20564295944114,
+    58.238196911537656
+  ],
+  "detection_class": "Dove Deodorant",
+  "detection_confidence": 0.95751953125,
+  "detection_bbox_xyxy": [
+    218.125,
+    174.75,
+    285.0,
+    237.25
+  ],
+  "stereo_left": "Stereo_Left_0004.png",
+  "stereo_right": "Stereo_Right_0004.png",
+  "overhead": "Overhead_0004.png",
+  "disparity": "disparity_0004.npz",
+  "points_cam": "points_cam_0004.npz",
+  "left_overlay": "left_overlay_0004.png"
+}

@@ -1,0 +1,33 @@
+{
+  "object_i": 7,
+  "class_name": "Carmex Lip Balm",
+  "pick_xy_mm": [
+    193.24731664367147,
+    140.41184632054205
+  ],
+  "pick_z_mm": -24.53633595771627,
+  "pick_grasp_z_mm": 105.46366404228374,
+  "pick_phi_deg": 11.264757968997742,
+  "place_xy_mm": null,
+  "place_phi_deg": null,
+  "destination_surface_z_mm": null,
+  "place_result": "pending",
+  "raw_box_center_xyz_mm": null,
+  "raw_box_size_xyz_mm": null,
+  "padded_box_center_xyz_mm": null,
+  "padded_box_size_xyz_mm": null,
+  "detection_class": "Carmex Lip Balm",
+  "detection_confidence": 0.83349609375,
+  "detection_bbox_xyxy": [
+    363.5,
+    107.5,
+    460.0,
+    180.875
+  ],
+  "stereo_left": "Stereo_Left_0007.png",
+  "stereo_right": "Stereo_Right_0007.png",
+  "overhead": "Overhead_0007.png",
+  "disparity": "disparity_0007.npz",
+  "points_cam": "points_cam_0007.npz",
+  "left_overlay": "left_overlay_0007.png"
+}
